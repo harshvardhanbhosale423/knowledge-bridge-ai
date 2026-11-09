@@ -17,7 +17,12 @@ if raw_db_url:
     else:
         DATABASE_URL = raw_db_url
 
-    # Serverless-friendly engine options for PostgreSQL / Neon
+    # Ensure TLS encryption (sslmode=require) for Neon cloud connections if omitted
+    if "neon.tech" in DATABASE_URL and "sslmode=" not in DATABASE_URL:
+        joiner = "&" if "?" in DATABASE_URL else "?"
+        DATABASE_URL = f"{DATABASE_URL}{joiner}sslmode=require"
+
+    # Serverless-friendly engine options for PostgreSQL / Neon (Supports pooled & direct)
     engine = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,      # Tests connection liveness before borrowing from pool
