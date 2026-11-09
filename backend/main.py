@@ -1,12 +1,18 @@
 import os
 import shutil
 import json
+import base64
+import hashlib
+import hmac
+import time
+import secrets
 from datetime import datetime
-from typing import List, Optional, Tuple, Dict
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Header, status
+from typing import List, Optional, Tuple, Dict, Any
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Header, status, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
@@ -40,17 +46,29 @@ finally:
 
 app = FastAPI(
     title="KNOWLEDGE BRIDGE AI - Backend API",
+    
     description="Enterprise Knowledge Handover Engine for Critical Project Transitions",
     version="1.0.0"
 )
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    return response
 
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-User-Role"],
 )
 
 def log_activity(db: Session, project_id: Optional[int], action: str, details: str, user_name: str = "Admin"):
@@ -108,94 +126,173 @@ def get_token_role_map() -> Dict[str, str]:
         token_map[team_tok] = "team_member"
     return token_map
 
-from pydantic import BaseModel
-class LoginRequest(BaseModel):
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
+
+def _b64url_decode(s: str) -> bytes:
+    padding = 4 - (len(s) % 4)
+    if padding and padding != 4:
+        s += "=" * padding
+    return base64.urlsafe_b64decode(s.encode("utf-8"))
+
+def create_jwt_session(role: str, email: str, user_name: str, expires_in_seconds: int = 28800) -> str:
+    _, _, sec_key = get_configured_tokens()
+    header = {"alg": "HS256", "typ": "JWT"}
+    now = int(time.time())
+    payload = {
+        "sub": email,
+        "user_name": user_name,
+        "role": role,
+        "iat": now,
+        "exp": now + expires_in_seconds,
+        "jti": secrets.token_hex(16)
+    }
+    encoded_header = _b64url_encode(json.dumps(header, separators=(',', ':')).encode("utf-8"))
+    encoded_payload = _b64url_encode(json.dumps(payload, separators=(',', ':')).encode("utf-8"))
+    signing_input = f"{encoded_header}.{encoded_payload}".encode("utf-8")
+    sig = hmac.new(sec_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
+    encoded_sig = _b64url_encode(sig)
+    return f"{encoded_header}.{encoded_payload}.{encoded_sig}"
+
+class UserSession(BaseModel):
+    role: str
+    user_name: str
     email: str
+    token_type: str = "jwt"
+
+def decode_jwt_session(token: str) -> Optional[UserSession]:
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        encoded_header, encoded_payload, encoded_sig = parts
+        _, _, sec_key = get_configured_tokens()
+        signing_input = f"{encoded_header}.{encoded_payload}".encode("utf-8")
+        expected_sig = hmac.new(sec_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
+        provided_sig = _b64url_decode(encoded_sig)
+        if not hmac.compare_digest(expected_sig, provided_sig):
+            return None
+        payload = json.loads(_b64url_decode(encoded_payload).decode("utf-8"))
+        now = int(time.time())
+        if payload.get("exp") and now > payload["exp"]:
+            return None
+        role = payload.get("role")
+        if role not in ["admin", "team_member"]:
+            return None
+        return UserSession(
+            role=role,
+            user_name=payload.get("user_name", "User"),
+            email=payload.get("sub", ""),
+            token_type="jwt"
+        )
+    except Exception:
+        return None
+
+class LoginRequest(BaseModel):
+    email: Optional[str] = None
     role: str = "admin"
+    credential: Optional[str] = None
+    token: Optional[str] = None
 
 @app.post("/api/auth/login")
 def login(req: LoginRequest):
     verify_security_secrets()
     role = req.role.strip().lower()
     if role not in ["admin", "team_member"]:
-        raise HTTPException(status_code=400, detail="Invalid role requested")
-    
+        raise HTTPException(status_code=400, detail="Invalid role requested. Must be 'admin' or 'team_member'.")
+
     admin_tok, team_tok, _ = get_configured_tokens()
-    token = admin_tok if role == "admin" else team_tok
+    expected_token = admin_tok if role == "admin" else team_tok
+
+    cred = (req.credential or req.token or "").strip()
+    if not cred:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Authentication failed: Secret credential is required to authenticate as '{role}'. Role selection without credential is prohibited."
+        )
+
+    if not hmac.compare_digest(cred, expected_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Authentication failed: Invalid credentials provided for role '{role}'."
+        )
+
     user_name = "Alex Chen" if role == "admin" else "Elena Rostova"
+    user_email = req.email or (f"alex.chen@knowledgebridge.internal" if role == "admin" else "elena.rostova@knowledgebridge.internal")
+
+    session_jwt = create_jwt_session(role=role, email=user_email, user_name=user_name)
+
     return {
-        "token": token,
+        "access_token": session_jwt,
+        "token_type": "bearer",
         "role": role,
-        "email": req.email,
+        "email": user_email,
         "user_name": user_name,
+        "expires_in": 28800,
         "message": f"Successfully authenticated as {role.upper()}"
     }
 
-def get_current_role(
+def get_current_session(
     authorization: Optional[str] = Header(None),
     x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
-    user_role: Optional[str] = Query(None)
-) -> str:
+) -> UserSession:
     verify_security_secrets()
-    token_map = get_token_role_map()
-
-    # 1. Inspect Authorization Bearer token if provided
-    auth_role = None
-    if authorization:
-        if authorization.startswith("Bearer "):
-            token = authorization.replace("Bearer ", "").strip()
-            auth_role = token_map.get(token)
-            if not auth_role:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Security Alert: Invalid, unrecognized, or forged authentication token. Access denied."
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Security Alert: Invalid authorization scheme. Bearer token required."
-            )
-
-    # 2. Inspect declared role from header or query
-    declared_role = (x_user_role or user_role).strip().lower() if (x_user_role or user_role) else None
-
-    # 3. Detect and block header manipulation:
-    # If client authenticates with a Team Member token but claims X-User-Role: admin, block immediately!
-    if auth_role and declared_role and auth_role != declared_role:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Security Alert: Header manipulation detected. Authenticated token role '{auth_role}' does not match claimed header role '{declared_role}'."
-        )
-
-    # If no token provided, return declared role or least-privileged 'team_member' (never admin by default)
-    return auth_role or declared_role or "team_member"
-
-def require_admin(
-    authorization: Optional[str] = Header(None),
-    role: str = Depends(get_current_role)
-) -> str:
-    verify_security_secrets()
-    admin_tok, _, _ = get_configured_tokens()
-
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Security Alert: Administrative operations require an Authorization Bearer token."
+            detail="Authentication required: Valid Authorization Bearer token must be provided."
         )
 
     token = authorization.replace("Bearer ", "").strip()
-    if token != admin_tok:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Security Alert: Administrative operations strictly require valid Admin authentication token."
-        )
+    session = decode_jwt_session(token)
 
-    if role != "admin":
+    if not session:
+        # Fallback check against raw master server tokens for automated tests / CLI / direct SDK access
+        admin_tok, team_tok, _ = get_configured_tokens()
+        if hmac.compare_digest(token, admin_tok):
+            session = UserSession(role="admin", user_name="Alex Chen", email="alex.chen@knowledgebridge.internal", token_type="api_token")
+        elif hmac.compare_digest(token, team_tok):
+            session = UserSession(role="team_member", user_name="Elena Rostova", email="elena.rostova@knowledgebridge.internal", token_type="api_token")
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Security Alert: Invalid, unrecognized, forged, or expired session token. Access denied."
+            )
+
+    # Detect and block role header manipulation attacks:
+    if x_user_role:
+        declared_role = x_user_role.strip().lower()
+        if declared_role != session.role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Security Alert: Header manipulation detected. Authenticated token role '{session.role}' does not match claimed header role '{declared_role}'."
+            )
+
+    return session
+
+def require_admin(session: UserSession = Depends(get_current_session)) -> UserSession:
+    if session.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Administrative privilege required. Team Members are not authorized to perform this operation."
+            detail="Access denied: Administrative privileges required. Team Members are restricted from this operation."
         )
-    return role
+    return session
+
+def require_authenticated(session: UserSession = Depends(get_current_session)) -> UserSession:
+    return session
+
+@app.post("/api/auth/logout")
+def logout(session: UserSession = Depends(require_authenticated)):
+    return {"message": "Session successfully terminated."}
+
+@app.get("/api/auth/me")
+def get_current_user_profile(session: UserSession = Depends(require_authenticated)):
+    return {
+        "role": session.role,
+        "user_name": session.user_name,
+        "email": session.email,
+        "token_type": session.token_type
+    }
 
 # --- Health & Diagnostics ---
 @app.get("/api/health")
@@ -209,11 +306,11 @@ def health_check():
     }
 
 @app.get("/api/ai/config")
-def get_ai_config():
+def get_ai_config(session: UserSession = Depends(require_authenticated)):
     return get_configured_ai_provider()
 
 @app.get("/api/ai/quota-status")
-def get_ai_quota_status():
+def get_ai_quota_status(session: UserSession = Depends(require_authenticated)):
     from .ai_engine import quota_manager
     return {
         "provider": get_configured_ai_provider(),
@@ -222,13 +319,13 @@ def get_ai_quota_status():
     }
 
 @app.get("/api/ai/test-live")
-async def test_live_ai():
+async def test_live_ai(session: UserSession = Depends(require_admin)):
     from .ai_engine import test_live_gemini_connection
     return await test_live_gemini_connection()
 
 # --- Dashboard Stats ---
 @app.get("/api/stats", response_model=DashboardStats)
-def get_dashboard_stats(db: Session = Depends(get_db)):
+def get_dashboard_stats(session: UserSession = Depends(require_authenticated), db: Session = Depends(get_db)):
     total_projects = db.query(Project).count()
     uploaded_docs = db.query(Document).count()
     pending_reviews = db.query(KnowledgeItem).filter(KnowledgeItem.status == "pending_review").count()
@@ -257,12 +354,12 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 
 # --- Users & Roles ---
 @app.get("/api/users", response_model=List[UserOut])
-def list_users(db: Session = Depends(get_db)):
+def list_users(session: UserSession = Depends(require_admin), db: Session = Depends(get_db)):
     return db.query(User).all()
 
 # --- Projects Workspace ---
 @app.get("/api/projects", response_model=List[ProjectOut])
-def list_projects(db: Session = Depends(get_db)):
+def list_projects(session: UserSession = Depends(require_authenticated), db: Session = Depends(get_db)):
     projects = db.query(Project).order_by(desc(Project.created_at)).all()
     results = []
     for p in projects:
@@ -301,7 +398,7 @@ def list_projects(db: Session = Depends(get_db)):
     return results
 
 @app.post("/api/projects", response_model=ProjectOut)
-def create_project(data: ProjectCreate, role: str = Depends(require_admin), db: Session = Depends(get_db)):
+def create_project(data: ProjectCreate, session: UserSession = Depends(require_admin), db: Session = Depends(get_db)):
     # Check duplicate code
     existing = db.query(Project).filter(Project.code == data.code.strip().upper()).first()
     if existing:
@@ -320,7 +417,7 @@ def create_project(data: ProjectCreate, role: str = Depends(require_admin), db: 
     db.commit()
     db.refresh(project)
 
-    log_activity(db, project.id, "PROJECT_CREATED", f"Initialized project workspace for {project.title}")
+    log_activity(db, project.id, "PROJECT_CREATED", f"Initialized project workspace for {project.title}", user_name=session.user_name)
     
     return ProjectOut(
         id=project.id,
@@ -341,7 +438,7 @@ def create_project(data: ProjectCreate, role: str = Depends(require_admin), db: 
     )
 
 @app.get("/api/projects/{project_id}", response_model=ProjectOut)
-def get_project(project_id: int, db: Session = Depends(get_db)):
+def get_project(project_id: int, session: UserSession = Depends(require_authenticated), db: Session = Depends(get_db)):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -380,7 +477,7 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     )
 
 @app.patch("/api/projects/{project_id}", response_model=ProjectOut)
-def update_project(project_id: int, data: ProjectUpdate, db: Session = Depends(get_db)):
+def update_project(project_id: int, data: ProjectUpdate, session: UserSession = Depends(require_admin), db: Session = Depends(get_db)):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -400,17 +497,17 @@ def update_project(project_id: int, data: ProjectUpdate, db: Session = Depends(g
 
     db.commit()
     db.refresh(p)
-    return get_project(project_id, db)
+    return get_project(project_id, session=session, db=db)
 
 @app.delete("/api/projects/{project_id}")
-def delete_project(project_id: int, role: str = Depends(require_admin), db: Session = Depends(get_db)):
+def delete_project(project_id: int, session: UserSession = Depends(require_admin), db: Session = Depends(get_db)):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
     title = p.title
     db.delete(p)
     db.commit()
-    log_activity(db, None, "PROJECT_DELETED", f"Deleted project workspace: {title}")
+    log_activity(db, None, "PROJECT_DELETED", f"Deleted project workspace: {title}", user_name=session.user_name)
     return {"message": f"Project '{title}' and associated records deleted."}
 
 # --- Document Upload & Extraction ---
@@ -419,6 +516,7 @@ async def upload_document(
     project_id: int,
     file: UploadFile = File(...),
     auto_analyze: bool = Query(True),
+    session: UserSession = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -484,7 +582,8 @@ async def upload_document(
 
     log_activity(
         db, project_id, "DOCUMENT_UPLOADED",
-        f"Uploaded {filename} ({round(file_size/1024, 1)} KB, {page_count} pages)"
+        f"Uploaded {filename} ({round(file_size/1024, 1)} KB, {page_count} pages)",
+        user_name=session.user_name
     )
 
     # Trigger automatic knowledge analysis if requested
@@ -518,17 +617,18 @@ async def upload_document(
         mode_label = "Demo Fallback" if items and items[0]["is_demo_mode"] else "AI Engine"
         log_activity(
             db, project_id, "ANALYSIS_COMPLETED",
-            f"Extracted {len(items)} knowledge items from {filename} via {mode_label}"
+            f"Extracted {len(items)} knowledge items from {filename} via {mode_label}",
+            user_name=session.user_name
         )
 
     return doc
 
 @app.get("/api/projects/{project_id}/documents", response_model=List[DocumentOut])
-def list_project_documents(project_id: int, db: Session = Depends(get_db)):
+def list_project_documents(project_id: int, session: UserSession = Depends(require_authenticated), db: Session = Depends(get_db)):
     return db.query(Document).filter(Document.project_id == project_id).order_by(desc(Document.upload_timestamp)).all()
 
 @app.get("/api/documents/{document_id}")
-def get_document_details(document_id: int, db: Session = Depends(get_db)):
+def get_document_details(document_id: int, session: UserSession = Depends(require_authenticated), db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -545,7 +645,7 @@ def get_document_details(document_id: int, db: Session = Depends(get_db)):
     }
 
 @app.delete("/api/documents/{document_id}")
-def delete_document(document_id: int, role: str = Depends(require_admin), db: Session = Depends(get_db)):
+def delete_document(document_id: int, session: UserSession = Depends(require_admin), db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -561,7 +661,7 @@ def delete_document(document_id: int, role: str = Depends(require_admin), db: Se
 
     db.delete(doc)
     db.commit()
-    log_activity(db, project_id, "DOCUMENT_DELETED", f"Deleted document {filename}")
+    log_activity(db, project_id, "DOCUMENT_DELETED", f"Deleted document {filename}", user_name=session.user_name)
     return {"message": f"Document '{filename}' deleted successfully."}
 
 # --- AI Knowledge Analysis Endpoint ---
@@ -569,6 +669,7 @@ def delete_document(document_id: int, role: str = Depends(require_admin), db: Se
 async def trigger_analysis(
     project_id: int,
     document_id: Optional[int] = Query(None),
+    session: UserSession = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -619,7 +720,8 @@ async def trigger_analysis(
 
     log_activity(
         db, project_id, "ANALYSIS_TRIGGERED",
-        f"Completed knowledge extraction: {total_created} items generated across {len(docs)} document(s)"
+        f"Completed knowledge extraction: {total_created} items generated across {len(docs)} document(s)",
+        user_name=session.user_name
     )
 
     ai_info = get_configured_ai_provider()
@@ -638,6 +740,7 @@ def list_knowledge_items(
     status: Optional[str] = Query(None),
     priority: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    session: UserSession = Depends(require_authenticated),
     db: Session = Depends(get_db)
 ):
     q = db.query(KnowledgeItem).filter(KnowledgeItem.project_id == project_id)
@@ -657,14 +760,14 @@ def list_knowledge_items(
     return q.order_by(desc(KnowledgeItem.created_at)).all()
 
 @app.get("/api/knowledge-items/{item_id}", response_model=KnowledgeItemOut)
-def get_knowledge_item(item_id: int, db: Session = Depends(get_db)):
+def get_knowledge_item(item_id: int, session: UserSession = Depends(require_authenticated), db: Session = Depends(get_db)):
     item = db.query(KnowledgeItem).filter(KnowledgeItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Knowledge item not found")
     return item
 
 @app.patch("/api/knowledge-items/{item_id}", response_model=KnowledgeItemOut)
-def update_knowledge_item(item_id: int, data: KnowledgeItemUpdate, db: Session = Depends(get_db)):
+def update_knowledge_item(item_id: int, data: KnowledgeItemUpdate, session: UserSession = Depends(require_admin), db: Session = Depends(get_db)):
     item = db.query(KnowledgeItem).filter(KnowledgeItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Knowledge item not found")
@@ -680,9 +783,11 @@ def update_knowledge_item(item_id: int, data: KnowledgeItemUpdate, db: Session =
     if data.status is not None:
         item.status = data.status
         item.reviewed_at = datetime.utcnow()
+        item.reviewed_by = session.user_name
         log_activity(
             db, item.project_id, f"ITEM_{item.status.upper()}",
-            f"Knowledge item #{item.id} '{item.title}' marked as {item.status} by {item.reviewed_by or 'Reviewer'}"
+            f"Knowledge item #{item.id} '{item.title}' marked as {item.status} by {session.user_name}",
+            user_name=session.user_name
         )
     if data.review_notes is not None:
         item.review_notes = data.review_notes
@@ -693,8 +798,12 @@ def update_knowledge_item(item_id: int, data: KnowledgeItemUpdate, db: Session =
     db.refresh(item)
     return item
 
+@app.patch("/api/knowledge/{item_id}/review", response_model=KnowledgeItemOut)
+def review_knowledge_item_alias(item_id: int, data: KnowledgeItemUpdate, session: UserSession = Depends(require_admin), db: Session = Depends(get_db)):
+    return update_knowledge_item(item_id=item_id, data=data, session=session, db=db)
+
 @app.post("/api/projects/{project_id}/batch-review")
-def batch_review_items(project_id: int, req: BatchReviewRequest, role: str = Depends(require_admin), db: Session = Depends(get_db)):
+def batch_review_items(project_id: int, req: BatchReviewRequest, session: UserSession = Depends(require_admin), db: Session = Depends(get_db)):
     items = db.query(KnowledgeItem).filter(
         KnowledgeItem.project_id == project_id,
         KnowledgeItem.id.in_(req.item_ids)
@@ -704,7 +813,7 @@ def batch_review_items(project_id: int, req: BatchReviewRequest, role: str = Dep
     count = 0
     for item in items:
         item.status = new_status
-        item.reviewed_by = req.reviewer_name
+        item.reviewed_by = req.reviewer_name or session.user_name
         item.reviewed_at = datetime.utcnow()
         if req.review_notes:
             item.review_notes = req.review_notes
@@ -713,17 +822,19 @@ def batch_review_items(project_id: int, req: BatchReviewRequest, role: str = Dep
     db.commit()
     log_activity(
         db, project_id, f"BATCH_{req.action.upper()}",
-        f"{req.reviewer_name} marked {count} item(s) as {new_status}"
+        f"{session.user_name} marked {count} item(s) as {new_status}",
+        user_name=session.user_name
     )
     return {"message": f"Successfully updated {count} items to '{new_status}'."}
 
 @app.delete("/api/knowledge-items/{item_id}")
-def delete_knowledge_item(item_id: int, db: Session = Depends(get_db)):
+def delete_knowledge_item(item_id: int, session: UserSession = Depends(require_admin), db: Session = Depends(get_db)):
     item = db.query(KnowledgeItem).filter(KnowledgeItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Knowledge item not found")
     db.delete(item)
     db.commit()
+    log_activity(db, item.project_id, "ITEM_DELETED", f"Deleted knowledge item #{item_id}: {item.title}", user_name=session.user_name)
     return {"message": "Knowledge item deleted."}
 
 # --- Handover Report Generator & Approval Gate ---
@@ -731,6 +842,7 @@ def delete_knowledge_item(item_id: int, db: Session = Depends(get_db)):
 def generate_handover_report(
     project_id: int,
     req: HandoverReportCreate,
+    session: UserSession = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -902,7 +1014,8 @@ def generate_handover_report(
 
     log_activity(
         db, project_id, "HANDOVER_GENERATED",
-        f"Generated Handover Draft v{version} containing {len(approved_items)} verified items."
+        f"Generated Handover Draft v{version} containing {len(approved_items)} verified items.",
+        user_name=session.user_name
     )
 
     return report
@@ -911,7 +1024,7 @@ def generate_handover_report(
 def approve_handover_report(
     project_id: int,
     req: HandoverApprovalRequest,
-    role: str = Depends(require_admin),
+    session: UserSession = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -926,11 +1039,11 @@ def approve_handover_report(
         raise HTTPException(status_code=400, detail="No handover report exists for this project. Generate one first.")
 
     report.status = "approved"
-    report.approved_by = req.approved_by
+    report.approved_by = req.approved_by or session.user_name
     report.approved_at = datetime.utcnow()
     
     # Append approval block to markdown content
-    approval_block = f"\n\n---\n### 9. OFFICIAL APPROVAL CERTIFICATION\n- **Approved By:** {req.approved_by}\n- **Date:** {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}\n- **Notes:** {req.signature_notes or 'All items reviewed and accepted for project handover.'}\n"
+    approval_block = f"\n\n---\n### 9. OFFICIAL APPROVAL CERTIFICATION\n- **Approved By:** {report.approved_by}\n- **Date:** {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}\n- **Notes:** {req.signature_notes or 'All items reviewed and accepted for project handover.'}\n"
     report.markdown_content += approval_block
 
     project.handover_status = "approved"
@@ -938,21 +1051,22 @@ def approve_handover_report(
 
     log_activity(
         db, project_id, "HANDOVER_APPROVED",
-        f"Handover report v{report.version} officially approved and certified by {req.approved_by}"
+        f"Handover report v{report.version} officially approved and certified by {report.approved_by}",
+        user_name=session.user_name
     )
 
     return {
         "message": f"Handover report v{report.version} approved successfully.",
         "report_id": report.id,
         "status": "approved",
-        "approved_by": req.approved_by,
+        "approved_by": report.approved_by,
         "approved_at": report.approved_at
     }
 
 @app.get("/api/projects/{project_id}/handover", response_model=HandoverReportOut)
 def get_latest_handover(
     project_id: int,
-    role: str = Depends(get_current_role),
+    session: UserSession = Depends(require_authenticated),
     db: Session = Depends(get_db)
 ):
     report = db.query(HandoverReport).filter(
@@ -962,8 +1076,8 @@ def get_latest_handover(
     if not report:
         raise HTTPException(status_code=404, detail="No handover report found for this project.")
 
-    # Requirement 3: Team Member cannot access unapproved handovers
-    if role == "team_member" and report.status != "approved":
+    # Critical Security Requirement: Team Member cannot access unapproved handovers
+    if session.role == "team_member" and report.status != "approved":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Team Members cannot access unapproved handovers until certified and published by an administrator."
@@ -973,11 +1087,11 @@ def get_latest_handover(
 
 # --- Activity Stream ---
 @app.get("/api/activities", response_model=List[ActivityLogOut])
-def list_activities(limit: int = 30, db: Session = Depends(get_db)):
+def list_activities(limit: int = 30, session: UserSession = Depends(require_authenticated), db: Session = Depends(get_db)):
     return db.query(ActivityLog).order_by(desc(ActivityLog.timestamp)).limit(limit).all()
 
 @app.get("/api/projects/{project_id}/activities", response_model=List[ActivityLogOut])
-def list_project_activities(project_id: int, limit: int = 30, db: Session = Depends(get_db)):
+def list_project_activities(project_id: int, limit: int = 30, session: UserSession = Depends(require_authenticated), db: Session = Depends(get_db)):
     return db.query(ActivityLog).filter(ActivityLog.project_id == project_id).order_by(desc(ActivityLog.timestamp)).limit(limit).all()
 
 # --- Static File Serving for Production Unified Deployment ---

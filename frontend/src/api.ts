@@ -39,26 +39,74 @@ export function setAuthToken(role: 'admin' | 'team_member', token: string) {
   } catch (e) {}
 }
 
-export async function authenticateSession(role: 'admin' | 'team_member', email?: string): Promise<string> {
+export function clearAuthToken(role?: 'admin' | 'team_member') {
+  try {
+    if (role) {
+      sessionStorage.removeItem(`kb_token_${role}`);
+      localStorage.removeItem(`kb_token_${role}`);
+    } else {
+      sessionStorage.removeItem('kb_token_admin');
+      sessionStorage.removeItem('kb_token_team_member');
+      localStorage.removeItem('kb_token_admin');
+      localStorage.removeItem('kb_token_team_member');
+    }
+  } catch (e) {}
+}
+
+export function isAuthenticated(): boolean {
+  return !!getAuthToken();
+}
+
+export async function authenticateSession(
+  role: 'admin' | 'team_member',
+  credential: string,
+  email?: string
+): Promise<{ access_token: string; role: string; user_name: string; email: string }> {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email: email || (role === 'admin' ? 'alex.chen@knowledgebridge.internal' : 'elena.rostova@knowledgebridge.internal'),
-      role: role
+      role: role,
+      credential: credential.trim()
     })
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Authentication failed');
+    throw new Error(err.detail || 'Authentication failed: Invalid credentials.');
   }
   const data = await res.json();
-  if (data.token) {
-    setAuthToken(role, data.token);
+  const token = data.access_token || data.token;
+  if (token) {
+    setAuthToken(role, token);
     setActiveUserRole(role);
-    return data.token;
+    return data;
   }
-  throw new Error('No token returned from authentication server');
+  throw new Error('No access token returned from authentication server');
+}
+
+export async function checkAuthStatus(): Promise<{ role: string; user_name: string; email: string } | null> {
+  const token = getAuthToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: getHeaders()
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      headers: getHeaders()
+    });
+  } catch (e) {}
+  clearAuthToken();
 }
 
 function getHeaders(custom: Record<string, string> = {}): Record<string, string> {

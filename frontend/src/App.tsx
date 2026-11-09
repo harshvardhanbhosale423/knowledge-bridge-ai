@@ -20,11 +20,14 @@ import { TeamMemberDashboard } from './components/TeamMemberDashboard';
 import { CreateProjectModal } from './components/CreateProjectModal';
 import { DocumentViewerModal } from './components/DocumentViewerModal';
 import { SettingsModal } from './components/SettingsModal';
+import { AuthModal } from './components/AuthModal';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export function App() {
   const [currentTab, setCurrentTab] = useState<string>('landing');
   const [userRole, setUserRole] = useState<UserRole>(api.getActiveUserRole());
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(api.isAuthenticated());
+  const [userName, setUserName] = useState<string>('User');
   
   // App data state
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -49,6 +52,7 @@ export function App() {
   // Modals
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [viewerDoc, setViewerDoc] = useState<any | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
@@ -60,11 +64,13 @@ export function App() {
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      try {
-        await api.authenticateSession(userRole);
-      } catch (authErr) {
-        console.warn('Initial session authentication note:', authErr);
+      const sessionUser = await api.checkAuthStatus();
+      if (sessionUser) {
+        setIsAuthenticated(true);
+        setUserName(sessionUser.user_name);
+        setUserRole(sessionUser.role as UserRole);
       }
+
       const [statsData, projectsData, activitiesData, configData] = await Promise.all([
         api.fetchStats().catch(() => null),
         api.fetchProjects().catch(() => []),
@@ -86,6 +92,15 @@ export function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLogout = async () => {
+    await api.logout();
+    setIsAuthenticated(false);
+    setStats(null);
+    setProjects([]);
+    setActivities([]);
+    showToast('Signed out of session. Enterprise authentication required to access records.');
   };
 
   useEffect(() => {
@@ -346,14 +361,9 @@ export function App() {
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         userRole={userRole}
-        setUserRole={async (role) => {
+        setUserRole={(role) => {
           setUserRole(role);
           api.setActiveUserRole(role);
-          try {
-            await api.authenticateSession(role);
-          } catch (e) {
-            console.warn('Role switch authentication note:', e);
-          }
           if (role === 'team_member') {
             setCurrentTab('team');
           } else if (currentTab === 'team') {
@@ -363,19 +373,31 @@ export function App() {
         aiConfig={aiConfig}
         onOpenCreateProject={() => setIsCreateProjectOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        isAuthenticated={isAuthenticated}
+        userName={userName}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onLogout={handleLogout}
       />
 
       {/* Main Tab Routing */}
       <main className="flex-1">
         {currentTab === 'landing' && (
           <LandingPage
-            onGetStarted={() => setCurrentTab('admin')}
+            onGetStarted={() => {
+              if (!isAuthenticated) {
+                setIsAuthOpen(true);
+              } else {
+                setCurrentTab(userRole === 'admin' ? 'admin' : 'team');
+              }
+            }}
             onExploreProjects={() => {
-              if (projects.length > 0) {
+              if (!isAuthenticated) {
+                setIsAuthOpen(true);
+              } else if (projects.length > 0) {
                 setSelectedProjectId(projects[0].id);
                 setCurrentTab('workspace');
               } else {
-                setCurrentTab('admin');
+                setCurrentTab(userRole === 'admin' ? 'admin' : 'team');
               }
             }}
             aiConfig={aiConfig}
@@ -462,6 +484,19 @@ export function App() {
         onRefreshConfig={async () => {
           const cfg = await api.fetchAIConfig();
           setAiConfig(cfg);
+        }}
+      />
+
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        defaultRole={userRole}
+        onSuccess={(role, name) => {
+          setIsAuthenticated(true);
+          setUserRole(role);
+          setUserName(name);
+          showToast(`Authenticated as ${role === 'admin' ? 'Administrator' : 'Team Member'} (${name})`);
+          loadInitialData();
         }}
       />
     </div>

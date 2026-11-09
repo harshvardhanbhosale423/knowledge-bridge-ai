@@ -8,7 +8,11 @@ import {
   Plus, 
   Settings as SettingsIcon,
   HelpCircle,
-  Cpu
+  Cpu,
+  Key,
+  LogOut,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import { UserRole, AIProviderConfig } from '../types';
 
@@ -20,6 +24,10 @@ interface NavbarProps {
   aiConfig: AIProviderConfig | null;
   onOpenCreateProject: () => void;
   onOpenSettings: () => void;
+  isAuthenticated: boolean;
+  userName?: string;
+  onOpenAuth: () => void;
+  onLogout: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -30,6 +38,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   aiConfig,
   onOpenCreateProject,
   onOpenSettings,
+  isAuthenticated,
+  userName,
+  onOpenAuth,
+  onLogout,
 }) => {
   return (
     <header className="sticky top-0 z-50 bg-[#070B14]/90 backdrop-blur-md border-b border-navy-750/80">
@@ -124,34 +136,65 @@ export const Navbar: React.FC<NavbarProps> = ({
             </span>
           </button>
 
-          {/* Role Switcher Pill */}
-          <div className="bg-navy-850 p-0.5 rounded-xl border border-navy-700/80 flex items-center shadow-inner">
+          {/* Authentication & Role Pill */}
+          {isAuthenticated ? (
+            <div className="flex items-center space-x-2">
+              <div className="bg-navy-850 p-0.5 rounded-xl border border-navy-700/80 flex items-center shadow-inner">
+                <button
+                  onClick={() => {
+                    if (userRole !== 'admin') {
+                      onOpenAuth();
+                    }
+                  }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    userRole === 'admin'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title={userRole === 'admin' ? `Signed in as Administrator (${userName || 'Alex Chen'})` : 'Click to authenticate as Administrator'}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Admin</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (userRole !== 'team_member') {
+                      onOpenAuth();
+                    }
+                  }}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    userRole === 'team_member'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title={userRole === 'team_member' ? `Signed in as Team Member (${userName || 'Elena Rostova'})` : 'Click to authenticate as Team Member'}
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Team</span>
+                </button>
+              </div>
+
+              {/* Logout button */}
+              <button
+                onClick={onLogout}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-colors"
+                title="Sign out of current session"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
             <button
-              onClick={() => setUserRole('admin')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                userRole === 'admin'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              onClick={onOpenAuth}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-glow-blue transition-all"
             >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Admin</span>
+              <Key className="w-3.5 h-3.5" />
+              <span>Sign In</span>
             </button>
-            <button
-              onClick={() => setUserRole('team_member')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                userRole === 'team_member'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <UserCheck className="w-3.5 h-3.5" />
-              <span>Team</span>
-            </button>
-          </div>
+          )}
 
           {/* Quick Create Project Button */}
-          {userRole === 'admin' && (
+          {isAuthenticated && userRole === 'admin' && (
             <button
               onClick={onOpenCreateProject}
               className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-glow-blue transition-all"

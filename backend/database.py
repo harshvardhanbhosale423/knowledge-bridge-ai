@@ -33,12 +33,15 @@ if raw_db_url:
     )
     logger.info("Database configured: Connected to external PostgreSQL (Neon)")
 else:
-    # Zero-Cost Local SQLite Fallback
-    # On Vercel, the app root is read-only; use /tmp for SQLite
+    # Silent SQLite fallback is strictly prohibited on Vercel production to prevent cold-start data loss
     if IS_VERCEL:
-        DATABASE_URL = "sqlite:////tmp/knowledge_bridge.db"
-    else:
-        DATABASE_URL = "sqlite:///./knowledge_bridge.db"
+        raise RuntimeError(
+            "CRITICAL SECURITY & PERSISTENCE ALERT: DATABASE_URL environment variable is missing on Vercel production. "
+            "Silent fallback to ephemeral SQLite is strictly disabled to prevent data loss across serverless cold starts."
+        )
+
+    # Zero-Cost Local SQLite Fallback for local development
+    DATABASE_URL = "sqlite:///./knowledge_bridge.db"
 
     connect_args = {"check_same_thread": False, "timeout": 20}
     engine = create_engine(
