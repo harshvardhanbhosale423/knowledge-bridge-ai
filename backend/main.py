@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
 from .database import engine, Base, get_db, SessionLocal
-from .models import User, Project, Document, KnowledgeItem, HandoverReport, ActivityLog
+from .models import User, Project, Document, KnowledgeItem, HandoverReport, ActivityLog, RevokedToken
 from .schemas import (
     ProjectCreate, ProjectUpdate, ProjectOut,
     DocumentOut,
@@ -62,10 +62,24 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
     return response
 
-# CORS configuration
+# CORS configuration: strict origin whitelisting (prohibits wildcard '*')
+DEFAULT_ALLOWED_ORIGINS = [
+    "https://knowledge-bridge-ai.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+env_origins = os.getenv("ALLOWED_ORIGINS", "").strip()
+if env_origins:
+    ALLOWED_ORIGINS = [o.strip() for o in env_origins.split(",") if o.strip()]
+else:
+    ALLOWED_ORIGINS = DEFAULT_ALLOWED_ORIGINS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-User-Role"],
@@ -158,35 +172,91 @@ class UserSession(BaseModel):
     role: str
     user_name: str
     email: str
+    jti: str
+    exp: int
     token_type: str = "jwt"
 
-def decode_jwt_session(token: str) -> Optional[UserSession]:
-    try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            return None
-        encoded_header, encoded_payload, encoded_sig = parts
-        _, _, sec_key = get_configured_tokens()
-        signing_input = f"{encoded_header}.{encoded_payload}".encode("utf-8")
-        expected_sig = hmac.new(sec_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
-        provided_sig = _b64url_decode(encoded_sig)
-        if not hmac.compare_digest(expected_sig, provided_sig):
-            return None
-        payload = json.loads(_b64url_decode(encoded_payload).decode("utf-8"))
-        now = int(time.time())
-        if payload.get("exp") and now > payload["exp"]:
-            return None
-        role = payload.get("role")
-        if role not in ["admin", "team_member"]:
-            return None
-        return UserSession(
-            role=role,
-            user_name=payload.get("user_name", "User"),
-            email=payload.get("sub", ""),
-            token_type="jwt"
+def decode_jwt_session(token: str) -> UserSession:
+    """
+    Strictly decodes and validates HMAC-SHA256 JWT session tokens.
+    Raises HTTPException(401) on malformed structure, invalid/forged signature,
+    expired lifetime, missing claims, or invalid roles.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Security Alert: Malformed token structure. Expected 3-part signed JWT."
         )
+
+    encoded_header, encoded_payload, encoded_sig = parts
+    _, _, sec_key = get_configured_tokens()
+    signing_input = f"{encoded_header}.{encoded_payload}".encode("utf-8")
+    expected_sig = hmac.new(sec_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
+
+    try:
+        provided_sig = _b64url_decode(encoded_sig)
     except Exception:
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Security Alert: Invalid token signature encoding."
+        )
+
+    if not hmac.compare_digest(expected_sig, provided_sig):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Security Alert: Invalid, forged, or tampered token signature. Access denied."
+        )
+
+    try:
+        payload = json.loads(_b64url_decode(encoded_payload).decode("utf-8"))
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Security Alert: Unparseable token payload claims."
+        )
+
+    # Validate mandatory claims
+    required_claims = ["sub", "role", "exp", "iat", "jti"]
+    for claim in required_claims:
+        if claim not in payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Security Alert: Missing mandatory token claim '{claim}'."
+            )
+
+    # Enforce JWT Expiration strictly
+    now = int(time.time())
+    exp = payload.get("exp")
+    if not isinstance(exp, (int, float)) or now > exp:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Security Alert: Session token has expired. Please re-authenticate."
+        )
+
+    # Validate issued-at not in future (allow 60s clock skew)
+    iat = payload.get("iat")
+    if isinstance(iat, (int, float)) and iat > now + 60:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Security Alert: Token issued in the future. Clock synchronization error."
+        )
+
+    role = str(payload.get("role", "")).strip().lower()
+    if role not in ["admin", "team_member"]:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Security Alert: Unauthorized or invalid role claim in token."
+        )
+
+    return UserSession(
+        role=role,
+        user_name=payload.get("user_name", "User"),
+        email=payload.get("sub", ""),
+        jti=payload.get("jti"),
+        exp=int(exp),
+        token_type="jwt"
+    )
 
 class LoginRequest(BaseModel):
     email: Optional[str] = None
@@ -235,7 +305,12 @@ def login(req: LoginRequest):
 def get_current_session(
     authorization: Optional[str] = Header(None),
     x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    db: Session = Depends(get_db),
 ) -> UserSession:
+    """
+    Enforces strict JWT-only session authentication and server-side revocation checks.
+    Master tokens (ADMIN_TOKEN / TEAM_TOKEN) are strictly rejected as session tokens.
+    """
     verify_security_secrets()
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -244,22 +319,19 @@ def get_current_session(
         )
 
     token = authorization.replace("Bearer ", "").strip()
+    
+    # Strictly decode and validate signed JWT claims (rejects master tokens, expired, forged, or malformed)
     session = decode_jwt_session(token)
 
-    if not session:
-        # Fallback check against raw master server tokens for automated tests / CLI / direct SDK access
-        admin_tok, team_tok, _ = get_configured_tokens()
-        if hmac.compare_digest(token, admin_tok):
-            session = UserSession(role="admin", user_name="Alex Chen", email="alex.chen@knowledgebridge.internal", token_type="api_token")
-        elif hmac.compare_digest(token, team_tok):
-            session = UserSession(role="team_member", user_name="Elena Rostova", email="elena.rostova@knowledgebridge.internal", token_type="api_token")
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Security Alert: Invalid, unrecognized, forged, or expired session token. Access denied."
-            )
+    # Check server-side revocation list in Neon PostgreSQL
+    is_revoked = db.query(RevokedToken).filter(RevokedToken.jti == session.jti).first()
+    if is_revoked:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Security Alert: Session has been revoked/logged out server-side. Access denied."
+        )
 
-    # Detect and block role header manipulation attacks:
+    # Detect and block role header manipulation attacks
     if x_user_role:
         declared_role = x_user_role.strip().lower()
         if declared_role != session.role:
@@ -282,8 +354,44 @@ def require_authenticated(session: UserSession = Depends(get_current_session)) -
     return session
 
 @app.post("/api/auth/logout")
-def logout(session: UserSession = Depends(require_authenticated)):
-    return {"message": "Session successfully terminated."}
+def logout(session: UserSession = Depends(require_authenticated), db: Session = Depends(get_db)):
+    """
+    Revokes the current JWT session server-side in Neon PostgreSQL.
+    Subsequent requests with this token are rejected immediately across all instances.
+    """
+    existing = db.query(RevokedToken).filter(RevokedToken.jti == session.jti).first()
+    if not existing:
+        revoked_entry = RevokedToken(
+            jti=session.jti,
+            role=session.role,
+            user_email=session.email,
+            revoked_at=datetime.utcnow(),
+            expires_at=datetime.utcfromtimestamp(session.exp)
+        )
+        db.add(revoked_entry)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    # Periodic cleanup of expired entries
+    try:
+        now_dt = datetime.utcnow()
+        db.query(RevokedToken).filter(RevokedToken.expires_at < now_dt).delete(synchronize_session=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    log_activity(
+        db, None, "USER_LOGOUT",
+        f"Session revoked server-side for {session.user_name} ({session.role})",
+        user_name=session.user_name
+    )
+
+    return {
+        "message": "Session successfully terminated and revoked server-side.",
+        "revoked_jti": session.jti
+    }
 
 @app.get("/api/auth/me")
 def get_current_user_profile(session: UserSession = Depends(require_authenticated)):

@@ -127,3 +127,14 @@ class ActivityLog(Base):
 
     project = relationship("Project", back_populates="activity_logs")
 
+class RevokedToken(Base):
+    __tablename__ = "revoked_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    jti = Column(String(64), unique=True, index=True, nullable=False)
+    role = Column(String(50), nullable=True)
+    user_email = Column(String(255), nullable=True)
+    revoked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+
+
