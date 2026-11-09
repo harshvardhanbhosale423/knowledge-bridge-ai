@@ -67,17 +67,17 @@ class KnowledgeItem(Base):
     title = Column(String(255), nullable=False)
     content = Column(Text, nullable=False)
     priority = Column(String(50), default="medium") # critical, high, medium, low
-    assignee = Column(String(100), nullable=True) # owner / responsible party
+    assignee = Column(String(255), nullable=True) # owner / responsible party
     
     # Review workflow: pending_review, approved, rejected, modified
     status = Column(String(50), default="pending_review", index=True)
     review_notes = Column(Text, nullable=True)
-    reviewed_by = Column(String(100), nullable=True)
+    reviewed_by = Column(String(255), nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
     
     # Evidence linkage
     source_document_name = Column(String(255), nullable=True)
-    source_page = Column(String(50), nullable=True)
+    source_page = Column(String(100), nullable=True)
     source_excerpt = Column(Text, nullable=True)
     evidence_verified = Column(Boolean, default=True) # True if excerpt confirmed in doc text
     missing_evidence_flag = Column(Boolean, default=False)
@@ -86,7 +86,7 @@ class KnowledgeItem(Base):
     # AI info
     is_ai_generated = Column(Boolean, default=True)
     is_demo_mode = Column(Boolean, default=False)
-    ai_provider = Column(String(50), default="Gemini-Flash")
+    ai_provider = Column(String(255), default="Gemini-Flash")
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
