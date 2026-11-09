@@ -1,0 +1,22 @@
+# PROJECT HELIOS - BIG DATA & KAFKA STREAMING HANDOVER
+Author: Dr. Tariq Al-Mansoor | Team: Core Data Platform | Status: Handover Certified
+
+--- [Page 1] ---
+1. PIPELINE OVERVIEW
+Helios ingests 45,000 transaction events per second into Apache Kafka clusters running on AWS MSK.
+
+2. CRITICAL DECISIONS
+- Decision: Standardized on Apache Flink 1.19 for stateful stream processing with exactly-once semantic guarantees.
+- Decision: Decided to use Apache Iceberg as our primary data lake table format on AWS S3.
+- Decision: Selected Debezium CDC connectors to capture changes from PostgreSQL Aurora with zero impact on replication lag.
+
+--- [Page 2] ---
+3. SYSTEM DEPENDENCIES & OWNERS
+- Dependency: Depends on AWS Glue Schema Registry for Avro serialization schemas.
+- Lead: Sarah Jenkins owns Flink consumer group offset alerting and checkpoint failure alarms.
+- Dependency: Integrated with Snowflake Data Cloud via Snowpipe Streaming v2.
+
+4. RISKS & UNRESOLVED QUESTIONS
+- High Risk: MSK brokers experience high disk I/O wait during midnight compact topic reconciliations.
+- Open Question: Should we migrate historical transaction data older than 3 years to Glacier Deep Archive or keep in Iceberg Standard S3?
+- Next Action: Rotate SASL/SCRAM client credentials across all 18 producer microservices before December 1st.

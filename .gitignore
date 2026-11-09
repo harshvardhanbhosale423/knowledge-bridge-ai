@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/python_env/
+
+# Production Builds
+dist/
+frontend/dist/
+.vercel/
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+
+# Databases & Uploads
+*.db
+*.sqlite
+knowledge_bridge.db
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# OS Files
+.DS_Store
+Thumbs.db
+

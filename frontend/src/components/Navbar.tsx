@@ -1,0 +1,177 @@
+import React from 'react';
+import { 
+  Layers, 
+  ShieldCheck, 
+  UserCheck, 
+  Sparkles, 
+  FolderGit2, 
+  Plus, 
+  Settings as SettingsIcon,
+  HelpCircle,
+  Cpu
+} from 'lucide-react';
+import { UserRole, AIProviderConfig } from '../types';
+
+interface NavbarProps {
+  currentTab: string;
+  setCurrentTab: (tab: string) => void;
+  userRole: UserRole;
+  setUserRole: (role: UserRole) => void;
+  aiConfig: AIProviderConfig | null;
+  onOpenCreateProject: () => void;
+  onOpenSettings: () => void;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({
+  currentTab,
+  setCurrentTab,
+  userRole,
+  setUserRole,
+  aiConfig,
+  onOpenCreateProject,
+  onOpenSettings,
+}) => {
+  return (
+    <header className="sticky top-0 z-50 bg-[#070B14]/90 backdrop-blur-md border-b border-navy-750/80">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        {/* Left: Brand Identity */}
+        <div className="flex items-center space-x-6">
+          <button 
+            onClick={() => setCurrentTab('landing')}
+            className="flex items-center space-x-3 text-left group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 p-[1px] shadow-glow-blue transition-transform group-hover:scale-105">
+              <div className="w-full h-full bg-[#0B1224] rounded-[11px] flex items-center justify-center">
+                <Layers className="w-5 h-5 text-blue-400 group-hover:text-cyan-300 transition-colors" />
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="font-extrabold tracking-tight text-white text-base">
+                  KNOWLEDGE BRIDGE <span className="text-blue-400">AI</span>
+                </span>
+                <span className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] uppercase font-bold tracking-widest bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded">
+                  v1.0
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 hidden md:block">
+                Never Lose Critical Knowledge. Keep Every Project Moving.
+              </p>
+            </div>
+          </button>
+
+          {/* Navigation links */}
+          <nav className="hidden lg:flex items-center space-x-1 pl-4 border-l border-navy-700/60">
+            <button
+              onClick={() => setCurrentTab('landing')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                currentTab === 'landing'
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                  : 'text-slate-300 hover:text-white hover:bg-navy-800'
+              }`}
+            >
+              Overview
+            </button>
+            <button
+              onClick={() => setCurrentTab('admin')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                currentTab === 'admin'
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                  : 'text-slate-300 hover:text-white hover:bg-navy-800'
+              }`}
+            >
+              Dashboard
+            </button>
+            <button
+              onClick={() => setCurrentTab('projects')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                currentTab === 'projects' || currentTab === 'workspace'
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                  : 'text-slate-300 hover:text-white hover:bg-navy-800'
+              }`}
+            >
+              Project Workspace
+            </button>
+            <button
+              onClick={() => setCurrentTab('team')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                currentTab === 'team'
+                  ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
+                  : 'text-slate-300 hover:text-white hover:bg-navy-800'
+              }`}
+            >
+              Team Member View
+            </button>
+          </nav>
+        </div>
+
+        {/* Right: Quick actions, Role Switcher, AI Status */}
+        <div className="flex items-center space-x-3">
+          {/* AI Engine Status Pill */}
+          <button
+            onClick={onOpenSettings}
+            className={`hidden sm:flex items-center space-x-2 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+              aiConfig?.is_demo_mode
+                ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
+                : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
+            }`}
+            title="Click to view AI Engine details and configuration"
+          >
+            <span className={`w-2 h-2 rounded-full ${aiConfig?.is_demo_mode ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+            <Cpu className="w-3.5 h-3.5" />
+            <span className="truncate max-w-[150px]">
+              {aiConfig?.is_demo_mode ? 'Free Fallback (₹0)' : 'Gemini Free (₹0)'}
+            </span>
+          </button>
+
+          {/* Role Switcher Pill */}
+          <div className="bg-navy-850 p-0.5 rounded-xl border border-navy-700/80 flex items-center shadow-inner">
+            <button
+              onClick={() => setUserRole('admin')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                userRole === 'admin'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Admin</span>
+            </button>
+            <button
+              onClick={() => setUserRole('team_member')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                userRole === 'team_member'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>Team</span>
+            </button>
+          </div>
+
+          {/* Quick Create Project Button */}
+          {userRole === 'admin' && (
+            <button
+              onClick={onOpenCreateProject}
+              className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-glow-blue transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Project</span>
+            </button>
+          )}
+
+          {/* Settings Trigger */}
+          <button
+            onClick={onOpenSettings}
+            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-navy-800 transition-colors"
+            title="Settings & System Diagnostics"
+          >
+            <SettingsIcon className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+};
+

@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: knowledge-bridge-ai
+    env: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: AI_PROVIDER
+        value: auto
+
