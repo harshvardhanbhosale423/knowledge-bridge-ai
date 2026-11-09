@@ -28,11 +28,7 @@ from .seed_data import seed_database
 Base.metadata.create_all(bind=engine)
 
 # Ensure upload directory exists (handles Vercel /tmp writable directory)
-IS_VERCEL = os.getenv("VERCEL") == "1" or os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
-if IS_VERCEL:
-    UPLOAD_DIR = "/tmp/uploads"
-else:
-    UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+UPLOAD_DIR = "/tmp/uploads" if os.path.exists("/tmp") else os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Seed initial data on startup
@@ -440,8 +436,15 @@ async def upload_document(
     safe_filename = f"{timestamp_prefix}_{filename}"
     file_path = os.path.join(UPLOAD_DIR, safe_filename)
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception:
+        # Fallback to tempfile directory if UPLOAD_DIR is not writable
+        import tempfile
+        file_path = os.path.join(tempfile.gettempdir(), safe_filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
     file_size = os.path.getsize(file_path)
 
