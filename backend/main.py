@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import time
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Tuple, Dict, Any
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Header, status, Request
 from fastapi.staticfiles import StaticFiles
@@ -62,27 +62,91 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
     return response
 
-# CORS configuration: strict origin whitelisting (prohibits wildcard '*')
-DEFAULT_ALLOWED_ORIGINS = [
-    "https://knowledge-bridge-ai.vercel.app",
+# --- Strict Production & Development CORS Configuration ---
+# Production allows strictly https://knowledge-bridge-ai.vercel.app
+# Localhost and 127.0.0.1 are only permitted when ENVIRONMENT != "production" and not running on Vercel
+PRODUCTION_FRONTEND_ORIGIN = "https://knowledge-bridge-ai.vercel.app"
+DEV_FRONTEND_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
 
-env_origins = os.getenv("ALLOWED_ORIGINS", "").strip()
-if env_origins:
-    ALLOWED_ORIGINS = [o.strip() for o in env_origins.split(",") if o.strip()]
-else:
-    ALLOWED_ORIGINS = DEFAULT_ALLOWED_ORIGINS
+def is_production_environment() -> bool:
+    """Checks whether the application is running in production mode."""
+    if os.getenv("VERCEL") == "1" or os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None:
+        return True
+    env = os.getenv("ENVIRONMENT", "").strip().lower()
+    return env == "production"
+
+def resolve_allowed_origins() -> List[str]:
+    """
+    Computes strict CORS origin whitelist:
+    - Production: Strictly permits approved production frontend origins. Localhost/127.0.0.1 are excluded.
+    - Development: Localhost and 127.0.0.1 origins are permitted.
+    - Custom ALLOWED_ORIGINS: Validated and sanitized. Wildcards ('*') are rejected.
+    """
+    is_prod = is_production_environment()
+    allowed: List[str] = []
+
+    # Check ALLOWED_ORIGINS environment variable
+    custom_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
+    if custom_origins_env:
+        for entry in custom_origins_env.split(","):
+            raw = entry.strip().rstrip("/")
+            if not raw:
+                continue
+            # Strictly reject wildcard origins
+            if raw == "*" or "*" in raw:
+                continue
+            if is_prod:
+                # In production, reject localhost, 127.0.0.1, and any insecure http:// origins
+                if raw.startswith("http://") or "localhost" in raw or "127.0.0.1" in raw:
+                    continue
+                if raw.startswith("https://") and raw not in allowed:
+                    allowed.append(raw)
+            else:
+                if (raw.startswith("http://") or raw.startswith("https://")) and raw not in allowed:
+                    allowed.append(raw)
+
+    if is_prod:
+        # In production, ensure PRODUCTION_FRONTEND_ORIGIN is present
+        if PRODUCTION_FRONTEND_ORIGIN not in allowed:
+            allowed.insert(0, PRODUCTION_FRONTEND_ORIGIN)
+    else:
+        # In development, include production origin plus local dev origins
+        if PRODUCTION_FRONTEND_ORIGIN not in allowed:
+            allowed.append(PRODUCTION_FRONTEND_ORIGIN)
+        for dev_orig in DEV_FRONTEND_ORIGINS:
+            if dev_orig not in allowed:
+                allowed.append(dev_orig)
+
+    return allowed
+
+class StrictSecurityCORSMiddleware(CORSMiddleware):
+    """
+    Strict CORS middleware enforcing:
+    - Dynamic environment check (production vs development)
+    - Rejection of wildcard origins
+    - Exclusion of localhost in production
+    - allow_credentials=False for zero-trust security
+    """
+    def is_allowed_origin(self, origin: str) -> bool:
+        if not origin:
+            return False
+        # Disallow wildcard
+        if origin == "*" or "*" in origin:
+            return False
+        allowed = resolve_allowed_origins()
+        return origin.rstrip("/") in allowed
 
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-User-Role"],
+    StrictSecurityCORSMiddleware,
+    allow_origins=resolve_allowed_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-User-Role"],
 )
 
 def log_activity(db: Session, project_id: Optional[int], action: str, details: str, user_name: str = "Admin"):
@@ -358,39 +422,68 @@ def logout(session: UserSession = Depends(require_authenticated), db: Session = 
     """
     Revokes the current JWT session server-side in Neon PostgreSQL.
     Subsequent requests with this token are rejected immediately across all instances.
+    Safely idempotent: if already revoked, returns success.
+    Fails securely: if database cannot persist revocation, rolls back and returns HTTP 503.
     """
-    existing = db.query(RevokedToken).filter(RevokedToken.jti == session.jti).first()
+    try:
+        existing = db.query(RevokedToken).filter(RevokedToken.jti == session.jti).first()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Logout could not be confirmed: Database unavailable to verify session revocation."
+        )
+
     if not existing:
         revoked_entry = RevokedToken(
             jti=session.jti,
             role=session.role,
             user_email=session.email,
-            revoked_at=datetime.utcnow(),
-            expires_at=datetime.utcfromtimestamp(session.exp)
+            revoked_at=datetime.now(timezone.utc),
+            expires_at=datetime.fromtimestamp(session.exp, tz=timezone.utc) if session.exp else None
         )
         db.add(revoked_entry)
         try:
             db.commit()
         except Exception:
             db.rollback()
+            # Handle potential concurrent race condition: recheck if jti was committed by concurrent request
+            try:
+                recheck = db.query(RevokedToken).filter(RevokedToken.jti == session.jti).first()
+                if not recheck:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Logout could not be confirmed: Session revocation could not be persisted in database. Please retry."
+                    )
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Logout could not be confirmed: Session revocation could not be persisted in database. Please retry."
+                )
 
-    # Periodic cleanup of expired entries
+    # Periodic cleanup of expired entries (isolated maintenance, never masks revocation commit)
     try:
-        now_dt = datetime.utcnow()
+        now_dt = datetime.now(timezone.utc)
         db.query(RevokedToken).filter(RevokedToken.expires_at < now_dt).delete(synchronize_session=False)
         db.commit()
     except Exception:
         db.rollback()
 
-    log_activity(
-        db, None, "USER_LOGOUT",
-        f"Session revoked server-side for {session.user_name} ({session.role})",
-        user_name=session.user_name
-    )
+    # Immutable audit logging (isolated, fails safely)
+    try:
+        log_activity(
+            db, None, "USER_LOGOUT",
+            f"Session revoked server-side for {session.user_name} ({session.role})",
+            user_name=session.user_name
+        )
+    except Exception:
+        pass
 
     return {
-        "message": "Session successfully terminated and revoked server-side.",
-        "revoked_jti": session.jti
+        "status": "success",
+        "message": "Session successfully terminated and revoked server-side."
     }
 
 @app.get("/api/auth/me")

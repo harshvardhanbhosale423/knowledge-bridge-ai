@@ -95,12 +95,16 @@ export function App() {
   };
 
   const handleLogout = async () => {
-    await api.logout();
-    setIsAuthenticated(false);
-    setStats(null);
-    setProjects([]);
-    setActivities([]);
-    showToast('Signed out of session. Enterprise authentication required to access records.');
+    try {
+      await api.logout();
+      setIsAuthenticated(false);
+      setStats(null);
+      setProjects([]);
+      setActivities([]);
+      showToast('Signed out of session. Enterprise authentication required to access records.');
+    } catch (err: any) {
+      showToast(err.message || 'Logout could not be confirmed server-side. Please retry.', 'error');
+    }
   };
 
   useEffect(() => {

@@ -17,6 +17,17 @@ if raw_db_url:
     else:
         DATABASE_URL = raw_db_url
 
+    # Seamless driver compatibility: if psycopg2 is missing, use psycopg (v3)
+    has_psycopg2 = False
+    try:
+        import psycopg2
+        has_psycopg2 = True
+    except ImportError:
+        pass
+
+    if not has_psycopg2 and not DATABASE_URL.startswith("postgresql+"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+
     # Ensure TLS encryption (sslmode=require) for Neon cloud connections if omitted
     if "neon.tech" in DATABASE_URL and "sslmode=" not in DATABASE_URL:
         joiner = "&" if "?" in DATABASE_URL else "?"

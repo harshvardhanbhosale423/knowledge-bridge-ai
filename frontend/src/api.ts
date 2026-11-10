@@ -100,12 +100,14 @@ export async function checkAuthStatus(): Promise<{ role: string; user_name: stri
 }
 
 export async function logout(): Promise<void> {
-  try {
-    await fetch(`${API_BASE}/auth/logout`, {
-      method: 'POST',
-      headers: getHeaders()
-    });
-  } catch (e) {}
+  const res = await fetch(`${API_BASE}/auth/logout`, {
+    method: 'POST',
+    headers: getHeaders()
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Logout could not be confirmed server-side. Please retry.');
+  }
   clearAuthToken();
 }
 
