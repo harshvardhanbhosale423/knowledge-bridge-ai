@@ -31,19 +31,21 @@ from .ai_engine import analyze_document_text, get_configured_ai_provider
 from .seed_data import seed_database
 from .report_generator import build_final_report_pdf, generate_final_report_markdown
 
-# Create tables
-Base.metadata.create_all(bind=engine)
-
 # Ensure upload directory exists (handles Vercel /tmp writable directory)
 UPLOAD_DIR = "/tmp/uploads" if os.path.exists("/tmp") else os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Seed initial data on startup
-_init_db = SessionLocal()
+# Create tables & seed initial data on startup (safe against cold-start timeouts)
 try:
-    seed_database(_init_db)
-finally:
-    _init_db.close()
+    Base.metadata.create_all(bind=engine)
+    _init_db = SessionLocal()
+    try:
+        seed_database(_init_db)
+    finally:
+        _init_db.close()
+except Exception as _startup_db_err:
+    import logging
+    logging.getLogger("uvicorn.error").warning(f"Initial DB schema/seed warning (will connect on demand): {_startup_db_err}")
 
 app = FastAPI(
     title="KNOWLEDGE BRIDGE AI - Backend API",

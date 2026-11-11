@@ -4,14 +4,11 @@
   "outputDirectory": "frontend/dist",
   "functions": {
     "api/index.py": {
+      "includeFiles": "backend/**",
       "maxDuration": 60
     }
   },
   "rewrites": [
-    {
-      "source": "/api/test",
-      "destination": "/api/test.py"
-    },
     {
       "source": "/api/(.*)",
       "destination": "/api/index.py"
@@ -22,4 +19,3 @@
     }
   ]
 }
-
