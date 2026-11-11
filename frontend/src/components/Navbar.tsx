@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Layers, 
   ShieldCheck, 
@@ -12,9 +12,15 @@ import {
   Key,
   LogOut,
   Lock,
-  Unlock
+  Download,
+  Sun,
+  Moon,
+  HardDrive,
+  Printer
 } from 'lucide-react';
 import { UserRole, AIProviderConfig } from '../types';
+import { useTheme } from '../context/ThemeContext';
+import * as api from '../api';
 
 interface NavbarProps {
   currentTab: string;
@@ -28,6 +34,7 @@ interface NavbarProps {
   userName?: string;
   onOpenAuth: () => void;
   onLogout: () => void;
+  onOpenReportModal: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -42,9 +49,22 @@ export const Navbar: React.FC<NavbarProps> = ({
   userName,
   onOpenAuth,
   onLogout,
+  onOpenReportModal,
 }) => {
+  const { theme, toggleTheme } = useTheme();
+  const isDemo = api.isDemoSession();
+
   return (
-    <header className="sticky top-0 z-50 bg-[#070B14]/90 backdrop-blur-md border-b border-navy-750/80">
+    <header className="sticky top-0 z-50 bg-[#070B14]/90 dark:bg-[#070B14]/90 backdrop-blur-md border-b border-navy-750/80 transition-colors">
+      {/* Judge Demo Banner Pill if Demo Session Active */}
+      {isDemo && (
+        <div className="bg-gradient-to-r from-indigo-900/90 via-purple-900/90 to-blue-900/90 border-b border-indigo-500/30 px-4 py-1 text-center text-xs font-semibold text-indigo-200 flex items-center justify-center space-x-2">
+          <Sparkles className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
+          <span>HACKATHON JUDGE DEMO MODE ACTIVE</span>
+          <span className="text-indigo-400 font-normal hidden sm:inline">• Read & Test Scope • Synthetic Enterprise Handover Data</span>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Left: Brand Identity */}
         <div className="flex items-center space-x-6">
@@ -63,7 +83,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   KNOWLEDGE BRIDGE <span className="text-blue-400">AI</span>
                 </span>
                 <span className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] uppercase font-bold tracking-widest bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded">
-                  v1.0
+                  v2.0
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 hidden md:block">
@@ -95,9 +115,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               Dashboard
             </button>
             <button
-              onClick={() => setCurrentTab('projects')}
+              onClick={() => setCurrentTab('workspace')}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                currentTab === 'projects' || currentTab === 'workspace'
+                currentTab === 'workspace' || currentTab === 'projects'
                   ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
                   : 'text-slate-300 hover:text-white hover:bg-navy-800'
               }`}
@@ -114,15 +134,47 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               Team Member View
             </button>
+            {userRole === 'admin' && (
+              <button
+                onClick={() => setCurrentTab('backup')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  currentTab === 'backup'
+                    ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
+                    : 'text-slate-300 hover:text-white hover:bg-navy-800'
+                }`}
+              >
+                Backup & Recovery
+              </button>
+            )}
           </nav>
         </div>
 
-        {/* Right: Quick actions, Role Switcher, AI Status */}
-        <div className="flex items-center space-x-3">
+        {/* Right: Actions, Role Switcher, Report Download, AI Status, Theme Toggle */}
+        <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* Prominent B&W PDF Download Button */}
+          <button
+            onClick={onOpenReportModal}
+            className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-950 rounded-xl text-xs font-extrabold shadow-md transition-all transform hover:-translate-y-0.5"
+            title="Download Official 20-Section Black & White Executive Project Report"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">PROJECT REPORT (PDF)</span>
+            <span className="md:hidden">REPORT</span>
+          </button>
+
+          {/* Theme Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-navy-800 transition-colors"
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-blue-400" />}
+          </button>
+
           {/* AI Engine Status Pill */}
           <button
             onClick={onOpenSettings}
-            className={`hidden sm:flex items-center space-x-2 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+            className={`hidden xl:flex items-center space-x-2 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
               aiConfig?.is_demo_mode
                 ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
                 : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
@@ -131,7 +183,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <span className={`w-2 h-2 rounded-full ${aiConfig?.is_demo_mode ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
             <Cpu className="w-3.5 h-3.5" />
-            <span className="truncate max-w-[150px]">
+            <span className="truncate max-w-[140px]">
               {aiConfig?.is_demo_mode ? 'Free Fallback (₹0)' : 'Gemini Free (₹0)'}
             </span>
           </button>
@@ -186,7 +238,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           ) : (
             <button
               onClick={onOpenAuth}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-glow-blue transition-all"
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-glow-blue transition-all"
             >
               <Key className="w-3.5 h-3.5" />
               <span>Sign In</span>
@@ -197,7 +249,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {isAuthenticated && userRole === 'admin' && (
             <button
               onClick={onOpenCreateProject}
-              className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-glow-blue transition-all"
+              className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-glow-blue transition-all"
             >
               <Plus className="w-4 h-4" />
               <span>New Project</span>
@@ -207,8 +259,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Settings Trigger */}
           <button
             onClick={onOpenSettings}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-navy-800 transition-colors"
-            title="Settings & System Diagnostics"
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-navy-800 transition-colors"
+            title="Settings & Diagnostics"
           >
             <SettingsIcon className="w-4 h-4" />
           </button>
@@ -217,4 +269,3 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
-

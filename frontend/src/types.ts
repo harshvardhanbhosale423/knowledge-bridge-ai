@@ -136,3 +136,39 @@ export interface AIProviderConfig {
   live_ai_message?: string;
 }
 
+export interface BackupRecord {
+  id: number;
+  filename: string;
+  backup_type: string;
+  file_size: number;
+  record_counts_json: string;
+  sha256_checksum: string;
+  status: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface BackupValidationResult {
+  valid: boolean;
+  format_version?: string;
+  created_at?: string;
+  project_count?: number;
+  document_count?: number;
+  knowledge_item_count?: number;
+  handover_report_count?: number;
+  activity_log_count?: number;
+  computed_sha256?: string;
+  manifest_sha256?: string;
+  checksum_matched?: boolean;
+  errors?: string[];
+}
+
+export interface BackupRestoreResult {
+  message: string;
+  pre_restore_backup?: string;
+  restored_counts?: Record<string, number>;
+  restored_by?: string;
+  restored_at?: string;
+}
+
+

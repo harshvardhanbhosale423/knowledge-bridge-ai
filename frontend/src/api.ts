@@ -1,7 +1,8 @@
 import {
   Project, Document, KnowledgeItem, HandoverReport,
   ActivityLog, DashboardStats, AIProviderConfig,
-  KnowledgeCategory, ItemPriority, ReviewStatus
+  KnowledgeCategory, ItemPriority, ReviewStatus,
+  BackupRecord, BackupValidationResult, BackupRestoreResult
 } from './types';
 
 const API_BASE = '/api';
@@ -21,6 +22,26 @@ export function getActiveUserRole(): 'admin' | 'team_member' {
     if (saved === 'team_member' || saved === 'admin') return saved;
   } catch (e) {}
   return activeUserRole;
+}
+
+export function isDemoSession(): boolean {
+  try {
+    return sessionStorage.getItem('kb_is_demo') === 'true' || localStorage.getItem('kb_is_demo') === 'true';
+  } catch (e) {
+    return false;
+  }
+}
+
+export function setDemoSession(isDemo: boolean) {
+  try {
+    if (isDemo) {
+      sessionStorage.setItem('kb_is_demo', 'true');
+      localStorage.setItem('kb_is_demo', 'true');
+    } else {
+      sessionStorage.removeItem('kb_is_demo');
+      localStorage.removeItem('kb_is_demo');
+    }
+  } catch (e) {}
 }
 
 export function getAuthToken(): string | null {
@@ -50,6 +71,7 @@ export function clearAuthToken(role?: 'admin' | 'team_member') {
       localStorage.removeItem('kb_token_admin');
       localStorage.removeItem('kb_token_team_member');
     }
+    setDemoSession(false);
   } catch (e) {}
 }
 
@@ -80,9 +102,33 @@ export async function authenticateSession(
   if (token) {
     setAuthToken(role, token);
     setActiveUserRole(role);
+    setDemoSession(false);
     return data;
   }
   throw new Error('No access token returned from authentication server');
+}
+
+export async function authenticateDemoSession(
+  role: 'admin' | 'team_member'
+): Promise<{ access_token: string; role: string; user_name: string; email: string; is_demo: boolean }> {
+  const res = await fetch(`${API_BASE}/auth/demo-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Demo authentication failed.');
+  }
+  const data = await res.json();
+  const token = data.access_token || data.token;
+  if (token) {
+    setAuthToken(role, token);
+    setActiveUserRole(role);
+    setDemoSession(true);
+    return data;
+  }
+  throw new Error('No access token returned from demo authentication server');
 }
 
 export async function checkAuthStatus(): Promise<{ role: string; user_name: string; email: string } | null> {
@@ -399,3 +445,90 @@ export async function fetchProjectActivities(projectId: number, limit: number = 
   if (!res.ok) throw new Error('Failed to fetch project activity logs');
   return res.json();
 }
+
+// --- Backup & Restore Center ---
+
+export async function exportBackup(): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/backup/export`, {
+    headers: getHeaders()
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to export backup archive');
+  }
+  return res.blob();
+}
+
+export async function validateBackup(file: File): Promise<BackupValidationResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const role = getActiveUserRole();
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    'X-User-Role': role
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}/backup/validate`, {
+    method: 'POST',
+    headers,
+    body: formData
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to validate backup archive');
+  }
+  return res.json();
+}
+
+export async function restoreBackup(backupData: any, confirmed: boolean = true): Promise<BackupRestoreResult> {
+  const res = await fetch(`${API_BASE}/backup/restore`, {
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      backup_payload: backupData,
+      confirmed: confirmed
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to restore backup archive');
+  }
+  return res.json();
+}
+
+export async function fetchBackupHistory(): Promise<BackupRecord[]> {
+  const res = await fetch(`${API_BASE}/backup/history`, {
+    headers: getHeaders()
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to fetch backup history');
+  }
+  return res.json();
+}
+
+// --- Reports & Exports ---
+
+export async function downloadPdfReport(): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/reports/project-pdf`, {
+    headers: getHeaders()
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to generate PDF report');
+  }
+  return res.blob();
+}
+
+export async function fetchMarkdownReport(): Promise<{ report_markdown: string }> {
+  const res = await fetch(`${API_BASE}/reports/markdown`, {
+    headers: getHeaders()
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to fetch Markdown report');
+  }
+  return res.json();
+}
+

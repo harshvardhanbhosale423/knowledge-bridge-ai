@@ -137,4 +137,18 @@ class RevokedToken(Base):
     revoked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=False)
 
+class BackupRecord(Base):
+    __tablename__ = "backup_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False)
+    backup_type = Column(String(50), default="manual") # manual, pre_restore
+    file_size = Column(Integer, default=0) # in bytes
+    record_counts_json = Column(Text, default="{}")
+    sha256_checksum = Column(String(64), nullable=False)
+    status = Column(String(50), default="completed") # completed, restored, failed
+    created_by = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 

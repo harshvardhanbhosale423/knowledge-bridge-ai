@@ -17,4 +17,6 @@ browser_audit.js
 *.png
 __pycache__
 *.pyc
+scratch
+
 

@@ -17,13 +17,28 @@ import { LandingPage } from './components/LandingPage';
 import { AdminDashboard } from './components/AdminDashboard';
 import { ProjectWorkspace } from './components/ProjectWorkspace';
 import { TeamMemberDashboard } from './components/TeamMemberDashboard';
+import { BackupRestoreCenter } from './components/BackupRestoreCenter';
 import { CreateProjectModal } from './components/CreateProjectModal';
 import { DocumentViewerModal } from './components/DocumentViewerModal';
 import { SettingsModal } from './components/SettingsModal';
-import { AuthModal } from './components/AuthModal';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { LoginPage } from './components/LoginPage';
+import { ReportModal } from './components/ReportModal';
+import { 
+  AlertCircle, 
+  CheckCircle2, 
+  Layers, 
+  FolderGit2, 
+  ShieldCheck, 
+  UserCheck, 
+  HardDrive, 
+  Printer, 
+  Sparkles,
+  Compass
+} from 'lucide-react';
+import { useTheme } from './context/ThemeContext';
 
 export function App() {
+  const { theme } = useTheme();
   const [currentTab, setCurrentTab] = useState<string>('landing');
   const [userRole, setUserRole] = useState<UserRole>(api.getActiveUserRole());
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(api.isAuthenticated());
@@ -49,10 +64,11 @@ export function App() {
   const [isGeneratingHandover, setIsGeneratingHandover] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  // Modals
+  // Modals & Overlays
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [viewerDoc, setViewerDoc] = useState<any | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
@@ -159,30 +175,28 @@ export function App() {
 
   // Document deletion handler
   const handleDeleteDocument = async (docId: number) => {
-    if (!confirm('Are you sure you want to delete this document?')) return;
+    if (!selectedProjectId) return;
     try {
       await api.deleteDocument(docId);
-      showToast('Document removed');
-      if (selectedProjectId) {
-        await loadProjectWorkspace(selectedProjectId);
-        await loadInitialData();
-      }
+      showToast('Document deleted successfully');
+      await loadProjectWorkspace(selectedProjectId);
+      await loadInitialData();
     } catch (err: any) {
-      showToast(err.message || 'Delete failed', 'error');
+      showToast(err.message || 'Failed to delete document', 'error');
     }
   };
 
-  // Inspect raw document text
+  // Document viewer modal trigger
   const handleViewDocument = async (docId: number) => {
     try {
       const details = await api.fetchDocumentDetails(docId);
       setViewerDoc(details);
     } catch (err: any) {
-      showToast('Failed to load document text', 'error');
+      showToast(err.message || 'Failed to fetch document text', 'error');
     }
   };
 
-  // Trigger AI extraction
+  // AI Analysis trigger
   const handleTriggerAnalysis = async (docId?: number) => {
     if (!selectedProjectId) return;
     try {
@@ -198,64 +212,58 @@ export function App() {
     }
   };
 
-  // Knowledge item approve
+  // Single Item Approval
   const handleApproveItem = async (itemId: number) => {
+    if (!selectedProjectId) return;
     try {
-      await api.updateKnowledgeItem(itemId, { 
-        status: 'approved', 
-        reviewed_by: userRole === 'admin' ? 'Alex Chen (Admin)' : 'Team Reviewer'
+      await api.updateKnowledgeItem(itemId, {
+        status: 'approved',
+        reviewed_by: userName || 'Admin Reviewer',
+        review_notes: 'Approved via Knowledge Bridge Command Center.'
       });
-      showToast('Item approved and verified');
-      if (selectedProjectId) {
-        await loadProjectWorkspace(selectedProjectId);
-        await loadInitialData();
-      }
+      showToast('Knowledge item approved');
+      await loadProjectWorkspace(selectedProjectId);
+      await loadInitialData();
     } catch (err: any) {
-      showToast('Failed to approve item', 'error');
+      showToast(err.message || 'Failed to approve item', 'error');
     }
   };
 
-  // Knowledge item reject
+  // Single Item Rejection
   const handleRejectItem = async (itemId: number) => {
+    if (!selectedProjectId) return;
     try {
-      await api.updateKnowledgeItem(itemId, { 
-        status: 'rejected', 
-        reviewed_by: userRole === 'admin' ? 'Alex Chen (Admin)' : 'Team Reviewer'
+      await api.updateKnowledgeItem(itemId, {
+        status: 'rejected',
+        reviewed_by: userName || 'Admin Reviewer',
+        review_notes: 'Rejected by human reviewer.'
       });
-      showToast('Item rejected');
-      if (selectedProjectId) {
-        await loadProjectWorkspace(selectedProjectId);
-        await loadInitialData();
-      }
+      showToast('Knowledge item rejected');
+      await loadProjectWorkspace(selectedProjectId);
+      await loadInitialData();
     } catch (err: any) {
-      showToast('Failed to reject item', 'error');
+      showToast(err.message || 'Failed to reject item', 'error');
     }
   };
 
-  // Update item
-  const handleUpdateItem = async (itemId: number, data: {
-    title?: string;
-    content?: string;
-    priority?: ItemPriority;
-    assignee?: string;
-    status?: ReviewStatus;
-    review_notes?: string;
-    reviewed_by?: string;
-  }) => {
+  // Knowledge Item Edit
+  const handleUpdateItem = async (itemId: number, data: any) => {
+    if (!selectedProjectId) return;
     try {
-      await api.updateKnowledgeItem(itemId, data);
-      showToast('Knowledge item updated');
-      if (selectedProjectId) {
-        await loadProjectWorkspace(selectedProjectId);
-        await loadInitialData();
-      }
+      await api.updateKnowledgeItem(itemId, {
+        ...data,
+        status: 'modified',
+        reviewed_by: userName || 'Admin Reviewer'
+      });
+      showToast('Knowledge item updated and marked as modified');
+      await loadProjectWorkspace(selectedProjectId);
+      await loadInitialData();
     } catch (err: any) {
-      showToast('Failed to update item', 'error');
-      throw err;
+      showToast(err.message || 'Failed to update item', 'error');
     }
   };
 
-  // Batch review
+  // Batch Review Items
   const handleBatchReview = async (itemIds: number[], action: 'approve' | 'reject') => {
     if (!selectedProjectId) return;
     try {
@@ -263,14 +271,13 @@ export function App() {
         selectedProjectId,
         itemIds,
         action,
-        userRole === 'admin' ? 'Alex Chen (Admin Reviewer)' : 'Elena Rostova (Team)'
+        userName || 'Admin Reviewer'
       );
       showToast(res.message);
       await loadProjectWorkspace(selectedProjectId);
       await loadInitialData();
     } catch (err: any) {
-      showToast('Batch action failed', 'error');
-      throw err;
+      showToast(err.message || 'Failed to complete batch review', 'error');
     }
   };
 
@@ -279,9 +286,12 @@ export function App() {
     if (!selectedProjectId) return;
     try {
       setIsGeneratingHandover(true);
-      const report = await api.generateHandover(selectedProjectId, { title, executive_summary: summary });
+      const report = await api.generateHandover(selectedProjectId, {
+        title,
+        executive_summary: summary
+      });
       setProjectHandover(report);
-      showToast(`Handover package v${report.version} generated`);
+      showToast('Handover package compiled successfully');
       await loadProjectWorkspace(selectedProjectId);
       await loadInitialData();
     } catch (err: any) {
@@ -291,17 +301,16 @@ export function App() {
     }
   };
 
-  // Approve Handover
+  // Approve and Certify Handover
   const handleApproveHandover = async (approvedBy: string, signatureNotes?: string) => {
     if (!selectedProjectId) return;
     try {
       const res = await api.approveHandover(selectedProjectId, approvedBy, signatureNotes);
-      showToast(res.message);
+      showToast('Handover report certified and locked for incoming team members!');
       await loadProjectWorkspace(selectedProjectId);
       await loadInitialData();
     } catch (err: any) {
-      showToast(err.message || 'Approval failed', 'error');
-      throw err;
+      showToast(err.message || 'Failed to approve handover', 'error');
     }
   };
 
@@ -314,22 +323,21 @@ export function App() {
     lead_name?: string;
   }) => {
     try {
-      const newProj = await api.createProject(data);
-      showToast(`Created workspace: ${newProj.title}`);
+      const created = await api.createProject(data);
+      showToast(`Created repository ${created.code}: ${created.title}`);
       await loadInitialData();
-      setSelectedProjectId(newProj.id);
+      setSelectedProjectId(created.id);
       setCurrentTab('workspace');
     } catch (err: any) {
       showToast(err.message || 'Failed to create project', 'error');
-      throw err;
     }
   };
 
   // Delete Project
-  const handleDeleteProject = async (projId: number) => {
+  const handleDeleteProject = async (projectId: number) => {
     try {
-      await api.deleteProject(projId);
-      showToast('Project deleted');
+      await api.deleteProject(projectId);
+      showToast('Project deleted successfully');
       await loadInitialData();
       setSelectedProjectId(null);
       setCurrentTab('admin');
@@ -340,40 +348,50 @@ export function App() {
 
   const selectedProject = projects.find(p => p.id === selectedProjectId) || (projects.length > 0 ? projects[0] : null);
 
+  // If user opened the full authentication portal
+  if (isAuthOpen) {
+    return (
+      <LoginPage
+        onSuccess={(role, name) => {
+          setIsAuthenticated(true);
+          setUserRole(role);
+          setUserName(name);
+          setIsAuthOpen(false);
+          showToast(`Authenticated as ${role === 'admin' ? 'Administrator' : 'Team Member'} (${name})`);
+          loadInitialData();
+          setCurrentTab(role === 'admin' ? 'admin' : 'team');
+        }}
+        onCancel={() => setIsAuthOpen(false)}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#060B17] text-slate-100 flex flex-col font-sans">
-      {/* Toast notification */}
+    <div className="min-h-screen bg-[#060B17] dark:bg-[#060B17] text-slate-100 flex flex-col font-sans transition-colors duration-200">
+      {/* Floating Notification Toast */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 animate-fade-in">
-          <div className={`px-4 py-3 rounded-xl border shadow-card flex items-center space-x-2.5 text-xs font-semibold ${
-            toastMessage.type === 'success'
-              ? 'bg-navy-900 text-emerald-300 border-emerald-500/40'
-              : 'bg-navy-900 text-rose-300 border-rose-500/40'
+        <div className="fixed top-20 right-6 z-50 animate-bounce">
+          <div className={`flex items-center space-x-2.5 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md border text-xs font-semibold ${
+            toastMessage.type === 'error'
+              ? 'bg-rose-950/90 border-rose-500/50 text-rose-200'
+              : 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200'
           }`}>
-            {toastMessage.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            {toastMessage.type === 'error' ? (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
             ) : (
-              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             )}
             <span>{toastMessage.text}</span>
           </div>
         </div>
       )}
 
-      {/* Top Navbar */}
+      {/* Main Top Header Navbar */}
       <Navbar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         userRole={userRole}
-        setUserRole={(role) => {
-          setUserRole(role);
-          api.setActiveUserRole(role);
-          if (role === 'team_member') {
-            setCurrentTab('team');
-          } else if (currentTab === 'team') {
-            setCurrentTab('admin');
-          }
-        }}
+        setUserRole={setUserRole}
         aiConfig={aiConfig}
         onOpenCreateProject={() => setIsCreateProjectOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
@@ -381,27 +399,32 @@ export function App() {
         userName={userName}
         onOpenAuth={() => setIsAuthOpen(true)}
         onLogout={handleLogout}
+        onOpenReportModal={() => setIsReportModalOpen(true)}
       />
 
-      {/* Main Tab Routing */}
-      <main className="flex-1">
+      {/* Main Dynamic Viewport */}
+      <main className="flex-1 pb-20">
         {currentTab === 'landing' && (
           <LandingPage
             onGetStarted={() => {
-              if (!isAuthenticated) {
-                setIsAuthOpen(true);
+              if (isAuthenticated && userRole === 'admin') {
+                setCurrentTab('admin');
+              } else if (isAuthenticated && userRole === 'team_member') {
+                setCurrentTab('team');
               } else {
-                setCurrentTab(userRole === 'admin' ? 'admin' : 'team');
+                setIsAuthOpen(true);
               }
             }}
             onExploreProjects={() => {
-              if (!isAuthenticated) {
-                setIsAuthOpen(true);
-              } else if (projects.length > 0) {
-                setSelectedProjectId(projects[0].id);
-                setCurrentTab('workspace');
+              if (isAuthenticated) {
+                if (projects.length > 0) {
+                  setSelectedProjectId(projects[0].id);
+                  setCurrentTab('workspace');
+                } else {
+                  setCurrentTab(userRole === 'admin' ? 'admin' : 'team');
+                }
               } else {
-                setCurrentTab(userRole === 'admin' ? 'admin' : 'team');
+                setIsAuthOpen(true);
               }
             }}
             aiConfig={aiConfig}
@@ -416,6 +439,8 @@ export function App() {
             onSelectProject={handleSelectProject}
             onOpenCreateProject={() => setIsCreateProjectOpen(true)}
             onOpenSettings={() => setIsSettingsOpen(true)}
+            onNavigateToTab={(tab) => setCurrentTab(tab)}
+            onOpenReportModal={() => setIsReportModalOpen(true)}
             loading={loading}
           />
         )}
@@ -449,7 +474,7 @@ export function App() {
               <p className="text-slate-400 text-sm">No project selected.</p>
               <button
                 onClick={() => setIsCreateProjectOpen(true)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-glow-blue"
               >
                 Create First Project
               </button>
@@ -466,7 +491,97 @@ export function App() {
             handover={projectHandover}
           />
         )}
+
+        {currentTab === 'backup' && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <BackupRestoreCenter
+              onRefreshData={loadInitialData}
+              onShowToast={showToast}
+            />
+          </div>
+        )}
       </main>
+
+      {/* Floating Anti-Scroll Quick Action Dock */}
+      <aside aria-label="Quick Actions Dock" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-navy-900/90 dark:bg-navy-900/90 backdrop-blur-xl border border-navy-750/90 rounded-2xl px-3 py-1.5 shadow-2xl flex items-center space-x-1.5 transition-all">
+        <button
+          onClick={() => setCurrentTab('landing')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+            currentTab === 'landing'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-navy-800'
+          }`}
+          title="Overview Landing Page"
+        >
+          <Compass className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Overview</span>
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('admin')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+            currentTab === 'admin'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-navy-800'
+          }`}
+          title="Admin Command Center"
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+          <span className="hidden sm:inline">Dashboard</span>
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('workspace')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+            currentTab === 'workspace' || currentTab === 'projects'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-navy-800'
+          }`}
+          title="Project Workspace"
+        >
+          <FolderGit2 className="w-3.5 h-3.5 text-cyan-400" />
+          <span className="hidden sm:inline">Workspace</span>
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('team')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+            currentTab === 'team'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-navy-800'
+          }`}
+          title="Team Member Handover View"
+        >
+          <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="hidden sm:inline">Team</span>
+        </button>
+
+        {userRole === 'admin' && (
+          <button
+            onClick={() => setCurrentTab('backup')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+              currentTab === 'backup'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-navy-800'
+            }`}
+            title="Backup & Recovery Center"
+          >
+            <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Backup</span>
+          </button>
+        )}
+
+        <div className="w-[1px] h-4 bg-navy-750 mx-1" />
+
+        <button
+          onClick={() => setIsReportModalOpen(true)}
+          className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-white hover:bg-slate-100 text-slate-950 flex items-center space-x-1.5 shadow-md transition-all transform hover:-translate-y-0.5"
+          title="Download 20-Section Black & White PDF Report"
+        >
+          <Printer className="w-3.5 h-3.5 text-slate-950" />
+          <span className="hidden md:inline">PDF Report</span>
+        </button>
+      </aside>
 
       {/* Modals */}
       <CreateProjectModal
@@ -489,23 +604,16 @@ export function App() {
           const cfg = await api.fetchAIConfig();
           setAiConfig(cfg);
         }}
+        onOpenBackupCenter={() => setCurrentTab('backup')}
       />
 
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        defaultRole={userRole}
-        onSuccess={(role, name) => {
-          setIsAuthenticated(true);
-          setUserRole(role);
-          setUserName(name);
-          showToast(`Authenticated as ${role === 'admin' ? 'Administrator' : 'Team Member'} (${name})`);
-          loadInitialData();
-        }}
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        onShowToast={showToast}
       />
     </div>
   );
 }
 
 export default App;
-

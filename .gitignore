@@ -27,10 +27,10 @@ __pycache__/
 *.so
 .pytest_cache/
 
-# OS Files
+# OS & Scratch Files
 .DS_Store
 Thumbs.db
-
+scratch/
 
 .vercel
 .env*
