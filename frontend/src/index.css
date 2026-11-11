@@ -6,11 +6,24 @@
   color-scheme: dark;
 }
 
+html:not(.dark) {
+  color-scheme: light;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow-x: hidden;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+html.dark body {
   background-color: #060B17;
   color: #F8FAFC;
-  overflow-x: hidden;
+}
+
+html:not(.dark) body {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
 }
 
 /* Custom modern scrollbar */
@@ -19,20 +32,33 @@ body {
   height: 7px;
 }
 
-::-webkit-scrollbar-track {
+html.dark ::-webkit-scrollbar-track {
   background: #0B1224;
 }
 
-::-webkit-scrollbar-thumb {
+html.dark ::-webkit-scrollbar-thumb {
   background: #1E293B;
   border-radius: 4px;
 }
 
-::-webkit-scrollbar-thumb:hover {
+html.dark ::-webkit-scrollbar-thumb:hover {
   background: #334155;
 }
 
-/* Glassmorphism subtle utilities */
+html:not(.dark) ::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Glassmorphism utilities */
 .glass-panel {
   background: rgba(15, 24, 46, 0.7);
   backdrop-filter: blur(12px);
@@ -59,3 +85,173 @@ body {
   box-shadow: 0 0 15px -3px rgba(16, 185, 129, 0.25);
 }
 
+/* =========================================================================
+   LIGHT / DAY MODE COMPREHENSIVE OVERRIDES
+   Ensures Day Mode is 100% executive crisp white, highly readable,
+   with sharp button contrast, distinct borders, and zero dark artifacts.
+   ========================================================================= */
+
+html:not(.dark) {
+  /* Page & Layout backgrounds */
+  .bg-navy-950,
+  .bg-\[\#060B17\],
+  .bg-\[\#070B14\],
+  .bg-\[\#090E1A\],
+  .bg-\[\#0B1224\] {
+    background-color: #F8FAFC !important;
+  }
+
+  /* Sticky Top Header Navbar */
+  header,
+  header.bg-\[\#070B14\]\/90 {
+    background-color: rgba(255, 255, 255, 0.96) !important;
+    border-bottom: 1px solid #E2E8F0 !important;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04) !important;
+  }
+
+  /* Cards, Modals & Main Containers */
+  .bg-navy-900,
+  .bg-navy-850,
+  .glass-card,
+  .glass-panel {
+    background-color: #FFFFFF !important;
+    border-color: #E2E8F0 !important;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.03) !important;
+  }
+
+  /* Secondary Rows, Filters, Sub-Panels */
+  .bg-navy-800,
+  .bg-navy-750 {
+    background-color: #F1F5F9 !important;
+    border-color: #CBD5E1 !important;
+  }
+
+  /* Borders across tables, dividers and cards */
+  .border-navy-800,
+  .border-navy-750,
+  .border-navy-700,
+  .border-navy-600 {
+    border-color: #E2E8F0 !important;
+  }
+
+  /* Text Colors & Contrast */
+  .text-white:not(.btn-colored):not(button.bg-blue-600 *):not(button.bg-blue-500 *):not(button.bg-emerald-600 *):not(button.bg-emerald-500 *):not(button.bg-rose-600 *):not(button.bg-rose-500 *):not(button.bg-indigo-600 *):not(button.bg-indigo-500 *):not(button.bg-purple-600 *):not(button.bg-amber-600 *):not(button.bg-slate-900 *):not(button.bg-slate-950 *):not(.bg-white *) {
+    color: #0F172A !important;
+  }
+
+  .text-slate-100,
+  .text-slate-200 {
+    color: #1E293B !important;
+  }
+
+  .text-slate-300 {
+    color: #334155 !important;
+  }
+
+  .text-slate-400 {
+    color: #475569 !important;
+  }
+
+  .text-slate-500 {
+    color: #64748B !important;
+  }
+
+  /* Inputs, Selects & Textareas */
+  input,
+  select,
+  textarea {
+    background-color: #FFFFFF !important;
+    border-color: #CBD5E1 !important;
+    color: #0F172A !important;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #94A3B8 !important;
+  }
+
+  /* Form inputs focus state */
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: #3B82F6 !important;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15) !important;
+  }
+
+  /* Primary Action Buttons: Maintain crisp white text */
+  button.bg-blue-600,
+  button.bg-blue-500,
+  button.bg-emerald-600,
+  button.bg-emerald-500,
+  button.bg-rose-600,
+  button.bg-indigo-600,
+  button.bg-indigo-500 {
+    color: #FFFFFF !important;
+  }
+
+  button.bg-blue-600 *,
+  button.bg-blue-500 *,
+  button.bg-emerald-600 *,
+  button.bg-emerald-500 *,
+  button.bg-rose-600 *,
+  button.bg-indigo-600 *,
+  button.bg-indigo-500 * {
+    color: #FFFFFF !important;
+  }
+
+  /* Prominent Executive PDF Button in Day Mode: High-contrast dark badge */
+  button.bg-white {
+    background-color: #0F172A !important;
+    color: #FFFFFF !important;
+    border: 1px solid #0F172A !important;
+  }
+
+  button.bg-white:hover {
+    background-color: #1E293B !important;
+    color: #FFFFFF !important;
+  }
+
+  button.bg-white * {
+    color: #FFFFFF !important;
+  }
+
+  /* Secondary Button Hover States */
+  .hover\:bg-navy-800:hover,
+  .hover\:bg-navy-850:hover {
+    background-color: #E2E8F0 !important;
+    color: #0F172A !important;
+  }
+
+  .hover\:text-white:hover {
+    color: #0F172A !important;
+  }
+
+  /* Floating Quick-Action Dock */
+  aside.fixed.bottom-6 {
+    background-color: rgba(255, 255, 255, 0.96) !important;
+    border: 1px solid #CBD5E1 !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.04) !important;
+  }
+
+  /* Modals Background */
+  .fixed.inset-0 .bg-\[\#0B1224\] {
+    background-color: #FFFFFF !important;
+    border-color: #CBD5E1 !important;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2) !important;
+  }
+
+  /* Table zebra and row dividers */
+  table tr {
+    border-color: #E2E8F0 !important;
+  }
+
+  table tr:hover {
+    background-color: #F8FAFC !important;
+  }
+
+  /* Pill containers */
+  .bg-navy-850 {
+    background-color: #F1F5F9 !important;
+    border-color: #CBD5E1 !important;
+  }
+}

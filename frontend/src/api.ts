@@ -510,8 +510,11 @@ export async function fetchBackupHistory(): Promise<BackupRecord[]> {
 
 // --- Reports & Exports ---
 
-export async function downloadPdfReport(): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/reports/project-pdf`, {
+export async function downloadPdfReport(projectId?: number): Promise<Blob> {
+  const url = projectId 
+    ? `${API_BASE}/reports/project-pdf?project_id=${projectId}` 
+    : `${API_BASE}/reports/project-pdf`;
+  const res = await fetch(url, {
     headers: getHeaders()
   });
   if (!res.ok) {
@@ -521,8 +524,22 @@ export async function downloadPdfReport(): Promise<Blob> {
   return res.blob();
 }
 
-export async function fetchMarkdownReport(): Promise<{ report_markdown: string }> {
-  const res = await fetch(`${API_BASE}/reports/markdown`, {
+export async function downloadPlatformPdfReport(): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/reports/platform-pdf`, {
+    headers: getHeaders()
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to generate platform report');
+  }
+  return res.blob();
+}
+
+export async function fetchMarkdownReport(projectId?: number): Promise<{ report_markdown: string }> {
+  const url = projectId 
+    ? `${API_BASE}/reports/markdown?project_id=${projectId}` 
+    : `${API_BASE}/reports/markdown`;
+  const res = await fetch(url, {
     headers: getHeaders()
   });
   if (!res.ok) {

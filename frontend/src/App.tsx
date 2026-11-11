@@ -367,7 +367,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#060B17] dark:bg-[#060B17] text-slate-100 flex flex-col font-sans transition-colors duration-200">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#060B17] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
       {/* Floating Notification Toast */}
       {toastMessage && (
         <div className="fixed top-20 right-6 z-50 animate-bounce">
@@ -611,6 +611,7 @@ export function App() {
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         onShowToast={showToast}
+        project={selectedProject}
       />
     </div>
   );

@@ -16,6 +16,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Project, HandoverReport, KnowledgeItem } from '../types';
+import * as api from '../api';
 
 interface HandoverGeneratorProps {
   project: Project;
@@ -39,6 +40,26 @@ export const HandoverGenerator: React.FC<HandoverGeneratorProps> = ({
   const [signatureNotes, setSignatureNotes] = useState('All decisions, operational dependencies, and 30-day next actions have been verified and confirmed.');
   const [isApproving, setIsApproving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    try {
+      setDownloadingPdf(true);
+      const blob = await api.downloadPdfReport(project.id);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${project.code}_OFFICIAL_HANDOVER_REPORT.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const approvedItems = items.filter(i => i.status === 'approved');
   const pendingItems = items.filter(i => i.status === 'pending_review');
@@ -125,6 +146,15 @@ export const HandoverGenerator: React.FC<HandoverGeneratorProps> = ({
 
           {handover && (
             <div className="flex items-center space-x-2">
+              <button
+                onClick={handleDownloadPdf}
+                disabled={downloadingPdf}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md transition-all disabled:opacity-50"
+                title="Download Official Black & White PDF Handover Report"
+              >
+                <Download className={`w-3.5 h-3.5 ${downloadingPdf ? 'animate-bounce' : ''}`} />
+                <span>PDF Handover</span>
+              </button>
               <button
                 onClick={handleCopyMarkdown}
                 className="p-2 bg-navy-800 hover:bg-navy-750 text-slate-300 hover:text-white rounded-xl border border-navy-700 text-xs transition-colors"
