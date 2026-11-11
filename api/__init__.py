@@ -1,2 +1,0 @@
-# Vercel Serverless Function package
-
