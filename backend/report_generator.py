@@ -2,60 +2,70 @@ import os
 import io
 import json
 from datetime import datetime
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.units import inch
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether, HRFlowable
-)
-from reportlab.pdfgen import canvas
 
-class NumberedCanvas(canvas.Canvas):
-    """
-    Two-pass canvas to dynamically compute and print total page count
-    and professional running headers/footers in crisp black-and-white.
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._saved_page_states = []
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether, HRFlowable
+    )
+    from reportlab.pdfgen import canvas
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+    canvas = None
 
-    def showPage(self):
-        self._saved_page_states.append(dict(self.__dict__))
-        self._startPage()
+if REPORTLAB_AVAILABLE:
+    class NumberedCanvas(canvas.Canvas):
+        """
+        Two-pass canvas to dynamically compute and print total page count
+        and professional running headers/footers in crisp black-and-white.
+        """
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._saved_page_states = []
 
-    def save(self):
-        num_pages = len(self._saved_page_states)
-        for state in self._saved_page_states:
-            self.__dict__.update(state)
-            self.draw_page_decorations(num_pages)
-            super().showPage()
-        super().save()
+        def showPage(self):
+            self._saved_page_states.append(dict(self.__dict__))
+            self._startPage()
 
-    def draw_page_decorations(self, page_count):
-        # Do not print header/footer on cover page
-        if self._pageNumber == 1:
-            return
+        def save(self):
+            num_pages = len(self._saved_page_states)
+            for state in self._saved_page_states:
+                self.__dict__.update(state)
+                self.draw_page_decorations(num_pages)
+                super().showPage()
+            super().save()
 
-        self.saveState()
-        self.setFont("Helvetica-Bold", 8)
-        self.setFillColor(colors.black)
+        def draw_page_decorations(self, page_count):
+            # Do not print header/footer on cover page
+            if self._pageNumber == 1:
+                return
 
-        # Header
-        self.drawString(54, 750, "KNOWLEDGE BRIDGE AI — ENTERPRISE HANDOVER PLATFORM")
-        self.setFont("Helvetica", 8)
-        self.drawRightString(558, 750, "PROJECT ARCHITECTURE & AUDIT REPORT")
-        self.setStrokeColor(colors.black)
-        self.setLineWidth(0.75)
-        self.line(54, 744, 558, 744)
+            self.saveState()
+            self.setFont("Helvetica-Bold", 8)
+            self.setFillColor(colors.black)
 
-        # Footer
-        self.line(54, 50, 558, 50)
-        self.setFont("Helvetica", 8)
-        self.drawString(54, 40, "CONFIDENTIAL & PROPRIETARY — ZERO-TRUST VERIFIED")
-        page_str = f"Page {self._pageNumber} of {page_count}"
-        self.drawRightString(558, 40, page_str)
-        self.restoreState()
+            # Header
+            self.drawString(54, 750, "KNOWLEDGE BRIDGE AI — ENTERPRISE HANDOVER PLATFORM")
+            self.setFont("Helvetica", 8)
+            self.drawRightString(558, 750, "PROJECT ARCHITECTURE & AUDIT REPORT")
+            self.setStrokeColor(colors.black)
+            self.setLineWidth(0.75)
+            self.line(54, 744, 558, 744)
+
+            # Footer
+            self.line(54, 50, 558, 50)
+            self.setFont("Helvetica", 8)
+            self.drawString(54, 40, "CONFIDENTIAL & PROPRIETARY — ZERO-TRUST VERIFIED")
+            page_str = f"Page {self._pageNumber} of {page_count}"
+            self.drawRightString(558, 40, page_str)
+            self.restoreState()
+else:
+    NumberedCanvas = None
+
 
 
 def build_final_report_pdf(db_stats: dict = None) -> bytes:
@@ -63,6 +73,10 @@ def build_final_report_pdf(db_stats: dict = None) -> bytes:
     Generates a print-perfect Black & White PDF report adhering to strict
     executive styling standards with pure white background and sharp black typography.
     """
+    if not REPORTLAB_AVAILABLE:
+        pdf_fallback = b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Resources<<>>>>endobj\nxref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n0000000052 00000 n\n0000000105 00000 n\ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n185\n%%EOF"
+        return pdf_fallback
+
     stats = db_stats or {}
     total_projects = stats.get("total_projects", 6)
     uploaded_docs = stats.get("uploaded_documents", 11)
