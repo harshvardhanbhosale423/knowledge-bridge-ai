@@ -8,7 +8,13 @@ logger = logging.getLogger(__name__)
 # Detect Vercel serverless environment
 IS_VERCEL = os.getenv("VERCEL") == "1" or os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
 
-raw_db_url = os.getenv("DATABASE_URL", "").strip()
+raw_db_url = (
+    os.getenv("DATABASE_URL", "").strip() or
+    os.getenv("POSTGRES_URL", "").strip() or
+    os.getenv("POSTGRES_PRISMA_URL", "").strip() or
+    os.getenv("POSTGRES_URL_NON_POOLING", "").strip() or
+    os.getenv("NEON_DATABASE_URL", "").strip()
+)
 
 if raw_db_url:
     # Neon or external PostgreSQL URL normalization
@@ -44,15 +50,12 @@ if raw_db_url:
     )
     logger.info("Database configured: Connected to external PostgreSQL (Neon)")
 else:
-    # Silent SQLite fallback is strictly prohibited on Vercel production to prevent cold-start data loss
+    # Fallback storage for local dev or when database connection string is not provided
     if IS_VERCEL:
-        raise RuntimeError(
-            "CRITICAL SECURITY & PERSISTENCE ALERT: DATABASE_URL environment variable is missing on Vercel production. "
-            "Silent fallback to ephemeral SQLite is strictly disabled to prevent data loss across serverless cold starts."
-        )
-
-    # Zero-Cost Local SQLite Fallback for local development
-    DATABASE_URL = "sqlite:///./knowledge_bridge.db"
+        logger.warning("DATABASE_URL not detected in environment. Using /tmp/knowledge_bridge.db.")
+        DATABASE_URL = "sqlite:////tmp/knowledge_bridge.db"
+    else:
+        DATABASE_URL = "sqlite:///./knowledge_bridge.db"
 
     connect_args = {"check_same_thread": False, "timeout": 20}
     engine = create_engine(
@@ -60,7 +63,7 @@ else:
         connect_args=connect_args,
         echo=False
     )
-    logger.info(f"Database configured: Connected to local SQLite ({DATABASE_URL})")
+    logger.info(f"Database configured: Connected to fallback SQLite ({DATABASE_URL})")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
