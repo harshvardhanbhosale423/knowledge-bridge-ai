@@ -503,13 +503,13 @@ export function App() {
       </main>
 
       {/* Floating Anti-Scroll Quick Action Dock */}
-      <aside aria-label="Quick Actions Dock" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-navy-900/90 dark:bg-navy-900/90 backdrop-blur-xl border border-navy-750/90 rounded-2xl px-3 py-1.5 shadow-2xl flex items-center space-x-1.5 transition-all">
+      <aside aria-label="Quick Actions Dock" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-white/95 dark:bg-navy-900/95 backdrop-blur-xl border border-slate-300 dark:border-navy-750/90 rounded-2xl px-3 py-1.5 shadow-2xl flex items-center space-x-1.5 transition-all">
         <button
           onClick={() => setCurrentTab('landing')}
           className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
             currentTab === 'landing'
               ? 'bg-blue-600 text-white shadow-sm'
-              : 'text-slate-400 hover:text-white hover:bg-navy-800'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-navy-800'
           }`}
           title="Overview Landing Page"
         >
@@ -522,11 +522,11 @@ export function App() {
           className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
             currentTab === 'admin'
               ? 'bg-blue-600 text-white shadow-sm'
-              : 'text-slate-400 hover:text-white hover:bg-navy-800'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-navy-800'
           }`}
           title="Admin Command Center"
         >
-          <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+          <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
           <span className="hidden sm:inline">Dashboard</span>
         </button>
 
@@ -535,11 +535,11 @@ export function App() {
           className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
             currentTab === 'workspace' || currentTab === 'projects'
               ? 'bg-blue-600 text-white shadow-sm'
-              : 'text-slate-400 hover:text-white hover:bg-navy-800'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-navy-800'
           }`}
           title="Project Workspace"
         >
-          <FolderGit2 className="w-3.5 h-3.5 text-cyan-400" />
+          <FolderGit2 className="w-3.5 h-3.5 text-cyan-500" />
           <span className="hidden sm:inline">Workspace</span>
         </button>
 
@@ -548,11 +548,11 @@ export function App() {
           className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
             currentTab === 'team'
               ? 'bg-emerald-600 text-white shadow-sm'
-              : 'text-slate-400 hover:text-white hover:bg-navy-800'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-navy-800'
           }`}
           title="Team Member Handover View"
         >
-          <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <UserCheck className="w-3.5 h-3.5 text-emerald-500" />
           <span className="hidden sm:inline">Team</span>
         </button>
 
@@ -562,23 +562,23 @@ export function App() {
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
               currentTab === 'backup'
                 ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-navy-800'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-navy-800'
             }`}
             title="Backup & Recovery Center"
           >
-            <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
+            <HardDrive className="w-3.5 h-3.5 text-indigo-500" />
             <span className="hidden sm:inline">Backup</span>
           </button>
         )}
 
-        <div className="w-[1px] h-4 bg-navy-750 mx-1" />
+        <div className="w-[1px] h-4 bg-slate-300 dark:bg-navy-750 mx-1" />
 
         <button
           onClick={() => setIsReportModalOpen(true)}
-          className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-white hover:bg-slate-100 text-slate-950 flex items-center space-x-1.5 shadow-md transition-all transform hover:-translate-y-0.5"
+          className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:hover:bg-slate-100 dark:text-slate-950 flex items-center space-x-1.5 shadow-md transition-all transform hover:-translate-y-0.5"
           title="Download 20-Section Black & White PDF Report"
         >
-          <Printer className="w-3.5 h-3.5 text-slate-950" />
+          <Printer className="w-3.5 h-3.5 text-white dark:text-slate-950" />
           <span className="hidden md:inline">PDF Report</span>
         </button>
       </aside>
